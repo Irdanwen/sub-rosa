@@ -112,14 +112,19 @@ pub async fn publish(app: &tauri::AppHandle) -> Result<(), AppError> {
     let pool = crate::commands::repositories(app).await?.pool.clone();
     let sessions = crate::temporary_chat::session_ids(&pool).await?;
     let connector_rules = crate::connectors::hermes::ledger_rules(&pool).await;
-    write_ledger(
-        &hermes_home,
-        &render_ledger_with(
-            &sessions,
-            &crate::protected_mode::restrictions(),
-            &connector_rules,
-        ),
-    )
+    let ledger = render_ledger_with(
+        &sessions,
+        &crate::protected_mode::restrictions(),
+        &connector_rules,
+    );
+    // Both homes' runtimes read it (ADR-0140); the sandboxed one only once
+    // it exists.
+    for home in super::home_split::both_homes(&hermes_home) {
+        if home.is_dir() {
+            write_ledger(&home, &ledger)?;
+        }
+    }
+    Ok(())
 }
 
 /// The plugin and a fresh ledger, before a runtime starts.

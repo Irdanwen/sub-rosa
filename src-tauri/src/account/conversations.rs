@@ -417,12 +417,25 @@ pub async fn backfill_desktop(app: &AppHandle) -> Result<(), AppError> {
         return Ok(());
     }
     let paths = crate::commands::app_paths(app)?;
-    let source = paths.data_dir.join("hermes").join("state.db");
-    if !source.exists() {
-        return Ok(());
+    // Both homes hold conversations (ADR-0140), read as data only.
+    for home in ["hermes-sandboxed", "hermes"] {
+        let source = paths.data_dir.join(home).join("state.db");
+        if source.exists() {
+            backfill_from(app, &app_pool, &paths, &source).await?;
+        }
     }
+    Ok(())
+}
+
+#[cfg(desktop)]
+async fn backfill_from(
+    app: &AppHandle,
+    app_pool: &sqlx_sqlite::SqlitePool,
+    paths: &crate::app_paths::AppPaths,
+    source: &std::path::Path,
+) -> Result<(), AppError> {
     let options = sqlx_sqlite::SqliteConnectOptions::new()
-        .filename(&source)
+        .filename(source)
         .read_only(true)
         .create_if_missing(false);
     let source_pool = sqlx_sqlite::SqlitePoolOptions::new()
@@ -445,7 +458,7 @@ pub async fn backfill_desktop(app: &AppHandle) -> Result<(), AppError> {
             Err(e) if e.code == "conversation_invalid" => {} // bounded history is explicitly unsupported, not executed
             Err(e) => return Err(e),
         }
-        query("INSERT INTO account_conversation_backfill(profile,session_id,last_message_id) VALUES('default',?,?) ON CONFLICT(profile,session_id) DO UPDATE SET last_message_id=excluded.last_message_id").bind(&session_id).bind(&marker).execute(&app_pool).await?;
+        query("INSERT INTO account_conversation_backfill(profile,session_id,last_message_id) VALUES('default',?,?) ON CONFLICT(profile,session_id) DO UPDATE SET last_message_id=excluded.last_message_id").bind(&session_id).bind(&marker).execute(app_pool).await?;
     }
     source_pool.close().await;
     Ok(())

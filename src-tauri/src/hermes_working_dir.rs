@@ -290,9 +290,15 @@ pub async fn reveal_agent_working_dir(
     app: AppHandle,
     request: WorkingDirPathRequest,
 ) -> Result<(), AppError> {
-    let default_workspace = crate::app_paths::app_data_dir(&app)
-        .ok()
-        .map(|dir| dir.join("hermes").join("workspace"));
+    // Either mode's default workspace (ADR-0140: one home per mode).
+    let default_workspaces: Vec<PathBuf> = crate::app_paths::app_data_dir(&app)
+        .map(|dir| {
+            ["hermes-sandboxed", "hermes"]
+                .iter()
+                .map(|home| dir.join(home).join("workspace"))
+                .collect()
+        })
+        .unwrap_or_default();
     let requested = PathBuf::from(request.path.trim());
     let canonical = requested.canonicalize().map_err(|error| {
         AppError::new(
@@ -300,9 +306,10 @@ pub async fn reveal_agent_working_dir(
             format!("The folder can't be opened right now. {error}"),
         )
     })?;
-    let is_default_workspace = default_workspace
-        .and_then(|dir| dir.canonicalize().ok())
-        .is_some_and(|dir| dir == canonical);
+    let is_default_workspace = default_workspaces
+        .iter()
+        .filter_map(|dir| dir.canonicalize().ok())
+        .any(|dir| dir == canonical);
     if !is_default_workspace {
         validate_working_dir(&app, &request.path)?;
     }
@@ -396,9 +403,10 @@ pub async fn list_agent_folder_entries(
     app: AppHandle,
     request: FolderEntriesRequest,
 ) -> Result<FolderEntriesResponse, AppError> {
+    // A sandboxed session's default workspace, in its own home (ADR-0140).
     let default_workspace = crate::app_paths::app_data_dir(&app)
         .ok()
-        .map(|dir| dir.join("hermes").join("workspace"));
+        .map(|dir| dir.join("hermes-sandboxed").join("workspace"));
     let requested = request.path.as_deref().map(str::trim).unwrap_or("");
     let root = if requested.is_empty() {
         default_workspace.ok_or_else(|| {

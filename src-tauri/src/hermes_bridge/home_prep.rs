@@ -66,8 +66,10 @@ pub(super) fn create_skeleton(hermes_home: &Path) -> std::io::Result<()> {
 pub(super) fn prepare(hermes_home: &Path) -> Result<(), AppError> {
     // First start under ADR-0140: what a jailed process could plant before
     // goes aside first, before the gateway or a runtime starts on it.
+    // It is the shared home that held them, whichever home starts first.
+    let shared = super::home_split::shared_home(hermes_home);
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
-    super::quarantine::run_once(hermes_home, &date).map_err(failed)?;
+    super::quarantine::run_once(&shared, &date).map_err(failed)?;
     create_skeleton(hermes_home).map_err(failed)?;
     sweep_links(hermes_home);
     let mut settings = admin_settings::load(hermes_home);
@@ -80,7 +82,9 @@ pub(super) fn prepare(hermes_home: &Path) -> Result<(), AppError> {
         // against an empty list, and nothing planted survives meanwhile.
         let aside = env_set_aside(hermes_home);
         if aside.symlink_metadata().is_err() {
-            let existing = std::fs::read_to_string(hermes_home.join(".env")).unwrap_or_default();
+            // The `.env` a person may have filled is the shared home's (the
+            // sandboxed home is new).
+            let existing = std::fs::read_to_string(shared.join(".env")).unwrap_or_default();
             write_owned(&aside, &existing).map_err(failed)?;
         }
         if !settings.env_schema.is_empty() {
@@ -358,7 +362,7 @@ mod tests {
         assert!(!dir.path().join("uploads").exists());
         // Nor is a linked workspace a root to read or list files from.
         let roots = super::super::filesystem_roots(&home).unwrap();
-        assert!(roots.iter().all(|root| root.id != "workspace"));
+        assert!(roots.iter().all(|root| root.id != "workspace-unrestricted"));
     }
 
     #[test]

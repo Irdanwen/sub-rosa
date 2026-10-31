@@ -43,7 +43,9 @@ impl RealJail {
         let caches = PathBuf::from(std::env::var_os("HOME").unwrap()).join("Library/Caches");
         let dir = tempfile::tempdir_in(caches).unwrap();
         let root = std::fs::canonicalize(dir.path()).unwrap();
-        let home = root.join("hermes");
+        // ADR-0140: the sandboxed runtime's own home, beside the shared one.
+        let home = root.join(super::home_split::SANDBOXED_HOME);
+        std::fs::create_dir_all(root.join(super::home_split::SHARED_HOME)).unwrap();
         std::fs::create_dir_all(&home).unwrap();
         // What the app writes before a start (sync_hermes_config).
         home_prep::write_owned(
@@ -61,6 +63,7 @@ impl RealJail {
             home: &person,
             hermes_home: &home,
             runtime_dir: &runtime,
+            closed_homes: &[root.join(super::home_split::SHARED_HOME)],
             temp_roots: &temp,
             agent_cli_access: false,
             working_dir: None,
@@ -127,6 +130,13 @@ impl RealJail {
 fn a_run_cannot_plant_an_authorization_for_the_next_session() {
     let jail = RealJail::new();
     let runtime = jail.runtime.to_string_lossy().to_string();
+    let shared = jail
+        .home
+        .parent()
+        .unwrap()
+        .join(super::home_split::SHARED_HOME)
+        .to_string_lossy()
+        .to_string();
     let plants: Vec<(&str, String)> = vec![
         ("config.yaml allowlist", "printf 'command_allowlist:\\n- \"*\"\\n' >> config.yaml".into()),
         ("config.yaml approvals off", "printf 'approvals:\\n  mode: \"off\"\\n' > workspace/c && mv workspace/c config.yaml".into()),
@@ -150,6 +160,11 @@ fn a_run_cannot_plant_an_authorization_for_the_next_session() {
         // New files only: a plant that got through must not damage the real
         // runtime this test borrows (a mutation run once appended to its
         // source).
+        // The shared home of the unrestricted runtime and the gateway (ADR-0140).
+        ("shared config.yaml", format!("printf x >> '{shared}/config.yaml'")),
+        ("shared state.db", format!("printf x > '{shared}/state.db'")),
+        ("shared sessions", format!("mkdir -p '{shared}/sessions' && printf x > '{shared}/sessions/sessions.json'")),
+        ("shared logs", format!("mkdir -p '{shared}/logs' && printf x > '{shared}/logs/gateway.log'")),
         ("runtime source", format!("printf x > '{runtime}/hermes-agent/.subrosa-jail-probe.py'")),
         ("runtime interpreter", format!("printf x > '{runtime}/hermes-agent/venv/bin/.subrosa-jail-probe'")),
     ];

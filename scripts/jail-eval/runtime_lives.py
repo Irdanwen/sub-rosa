@@ -37,7 +37,7 @@ import websockets
 # What the profile re-opens in the home (sandbox_profile.rs). Kept here by
 # hand on purpose: the Rust test of the list is the gate on the list; this
 # is the gate on the runtime staying inside it.
-STATE_DIRS = ("workspace", "sessions", "logs", "cache", "images", "image_cache", "audio_cache")
+STATE_DIRS = ("workspace", "sessions", "logs", "cache", "images", "image_cache", "audio_cache", "mcp-tokens")
 STATE_FILES = (
     "state.db", "state.db-wal", "state.db-shm", "state.db-journal",
     "verification_evidence.db", "verification_evidence.db-wal",

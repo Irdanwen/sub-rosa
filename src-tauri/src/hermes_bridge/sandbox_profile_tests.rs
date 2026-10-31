@@ -12,6 +12,7 @@ fn grants<'a>(
     home: &'a Path,
     hermes_home: &'a Path,
     runtime_dir: &'a Path,
+    closed_homes: &'a [PathBuf],
     temp_roots: &'a [PathBuf],
     agent_cli_access: bool,
     working_dir: Option<&'a Path>,
@@ -20,6 +21,7 @@ fn grants<'a>(
         home,
         hermes_home,
         runtime_dir,
+        closed_homes,
         temp_roots,
         agent_cli_access,
         working_dir,
@@ -27,7 +29,9 @@ fn grants<'a>(
 }
 
 const HOME: &str = "/Users/test";
-const HERMES_HOME: &str = "/Users/test/Library/Application Support/xyz.carpediem.subrosa/hermes";
+const HERMES_HOME: &str =
+    "/Users/test/Library/Application Support/xyz.carpediem.subrosa/hermes-sandboxed";
+const SHARED_HOME: &str = "/Users/test/Library/Application Support/xyz.carpediem.subrosa/hermes";
 const RUNTIME: &str =
     "/Users/test/Library/Application Support/xyz.carpediem.subrosa/hermes-runtime";
 
@@ -36,10 +40,12 @@ fn fixed_profile(agent_cli_access: bool, working_dir: Option<&Path>) -> String {
         PathBuf::from("/private/tmp"),
         PathBuf::from("/private/var/tmp"),
     ];
+    let closed = [PathBuf::from(SHARED_HOME)];
     build_sandbox_profile(&grants(
         Path::new(HOME),
         Path::new(HERMES_HOME),
         Path::new(RUNTIME),
+        &closed,
         &temp,
         agent_cli_access,
         working_dir,
@@ -117,6 +123,7 @@ fn the_write_grants_are_exactly_the_declared_list() {
         "images",
         "image_cache",
         "audio_cache",
+        "mcp-tokens",
     ] {
         expected.push(format!("(subpath \"{h}/{dir}\")"));
     }
@@ -134,6 +141,17 @@ fn the_write_grants_are_exactly_the_declared_list() {
         expected.push(format!("(literal \"{h}/{file}\")"));
     }
     assert_eq!(write_grants(&fixed_profile(false, None)), expected);
+    // ADR-0140 (a): nothing of the shared home, the unrestricted runtime's
+    // and the gateway's, is ever a grant, and it is closed as a whole.
+    let profile = fixed_profile(true, Some(Path::new("/Users/test/Projects/a")));
+    for grant in write_grants(&profile) {
+        assert!(
+            !grant.contains(&format!("{SHARED_HOME}/"))
+                && !grant.contains(&format!("{SHARED_HOME}\"")),
+            "the shared home is writable: {grant}"
+        );
+    }
+    assert!(profile.contains(&format!("(subpath \"{SHARED_HOME}\")")));
 
     // The two opt-ins add exactly their own grants, nothing else.
     let with_folder = write_grants(&fixed_profile(
@@ -229,6 +247,8 @@ pub(super) struct KernelJail {
     _dir: tempfile::TempDir,
     pub root: PathBuf,
     pub hermes_home: PathBuf,
+    /// The shared home of the unrestricted runtime and the gateway.
+    pub shared_home: PathBuf,
     pub runtime_dir: PathBuf,
     pub profile_path: PathBuf,
 }
@@ -241,7 +261,9 @@ impl KernelJail {
         }
         let dir = tempfile::tempdir().ok()?;
         let root = std::fs::canonicalize(dir.path()).ok()?;
-        let hermes_home = root.join("hermes");
+        let hermes_home = root.join("hermes-sandboxed");
+        let shared_home = root.join("hermes");
+        std::fs::create_dir_all(&shared_home).ok()?;
         let runtime_dir = root.join("hermes-runtime");
         std::fs::create_dir_all(runtime_dir.join("hermes-agent/venv/bin")).ok()?;
         std::fs::create_dir_all(&hermes_home).ok()?;
@@ -255,6 +277,7 @@ impl KernelJail {
             home: &root,
             hermes_home: &hermes_home,
             runtime_dir: &runtime_dir,
+            closed_homes: std::slice::from_ref(&shared_home),
             temp_roots: &temp,
             agent_cli_access,
             working_dir: working.as_deref(),
@@ -265,6 +288,7 @@ impl KernelJail {
             _dir: dir,
             root,
             hermes_home,
+            shared_home,
             runtime_dir,
             profile_path,
         })
@@ -547,6 +571,100 @@ fn the_way_to_the_home_cannot_be_moved_or_replaced() {
     assert!(!ws
         .symlink_metadata()
         .is_ok_and(|meta| meta.file_type().is_symlink()));
+}
+
+/// ADR-0140 (a), for real: nothing of the shared home can be written, not
+/// its sessions, its logs (which the gateway's service opens by name), its
+/// workspace, nor its settings.
+#[test]
+fn the_shared_home_is_closed_to_the_jail_as_a_whole() {
+    let Some(jail) = KernelJail::new(false, Some(".")) else {
+        return;
+    };
+    for relative in [
+        "state.db",
+        "state.db-wal",
+        "sessions/sessions.json",
+        "logs/gateway.log",
+        "workspace/x",
+        "cache/x",
+        "config.yaml",
+        "cron/jobs.json",
+        "new-file",
+    ] {
+        assert!(
+            !jail.can_write(&jail.shared_home.join(relative)),
+            "the shared home's {relative} was written"
+        );
+    }
+    let moved = jail.sh(&format!(
+        "mv {home} {home}.old",
+        home = shell_quote(&jail.shared_home)
+    ));
+    assert!(!moved.status.success(), "the shared home was moved");
+}
+
+/// ADR-0140 (b): the auditor's carrier, a folder of the jail's own that
+/// holds links and a pipe, cannot take the place of a re-opened folder,
+/// whether by removing it first or by renaming over it.
+#[test]
+fn a_carrier_folder_cannot_take_a_reopened_folders_place() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let carrier = std::env::temp_dir().join(format!("subrosa-carrier-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&carrier);
+    std::fs::create_dir_all(&carrier).unwrap();
+    std::os::unix::fs::symlink("/etc/hosts", carrier.join("gateway.log")).unwrap();
+    let logs = jail.hermes_home.join("logs");
+    let out = jail.sh(&format!("rm -rf {logs}", logs = shell_quote(&logs)));
+    assert!(!out.status.success() || logs.is_dir(), "logs/ was removed");
+    let out = jail.sh(&format!(
+        "mv {carrier} {logs}",
+        carrier = shell_quote(&carrier),
+        logs = shell_quote(&logs)
+    ));
+    let replaced = logs
+        .join("gateway.log")
+        .symlink_metadata()
+        .is_ok_and(|meta| meta.file_type().is_symlink());
+    assert!(
+        !replaced,
+        "the carrier took logs/'s place ({})",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let _ = std::fs::remove_dir_all(&carrier);
+}
+
+/// ADR-0140 (c): no signal leaves the jail (the gateway, the app, the
+/// unrestricted runtime), while the runtime still stops its own children,
+/// in their own process groups too.
+#[test]
+fn the_jail_cannot_signal_a_process_outside_it() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let mut outside = Command::new("/bin/sleep");
+    outside.arg("60");
+    std::os::unix::process::CommandExt::process_group(&mut outside, 0);
+    let mut outside = outside.spawn().unwrap();
+    let out = jail.sh(&format!("kill -TERM {}", outside.id()));
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let alive = outside.try_wait().unwrap().is_none();
+    let _ = outside.kill();
+    let _ = outside.wait();
+    assert!(
+        !out.status.success() && alive,
+        "the jail stopped a process outside it"
+    );
+    let own = jail.sh(
+        "python3 -c 'import os,signal,subprocess,time; p=subprocess.Popen([\"sleep\",\"30\"],start_new_session=True); time.sleep(0.2); os.killpg(p.pid, signal.SIGTERM); print(p.wait())'",
+    );
+    assert!(
+        own.status.success(),
+        "{}",
+        String::from_utf8_lossy(&own.stderr)
+    );
 }
 
 #[test]

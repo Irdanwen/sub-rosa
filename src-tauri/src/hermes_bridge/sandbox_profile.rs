@@ -19,7 +19,7 @@ use super::{AGENT_CLI_STATE_DIRS, AGENT_CLI_STATE_FILE_PREFIXES};
 /// The folders of the runtime's home the jail may write, relative to it.
 /// Measured on the pinned runtime under the profile (ADR-0140): its dashboard
 /// starts and answers, a session opens and runs terminal, file, search, todo,
-/// skill reading, session search, code, delegation and image attachment, and
+/// skill reading, session search, delegation and image attachment, and
 /// no other folder of the home is written. None of them holds a setting, a
 /// permission or a program another process runs.
 ///
@@ -29,6 +29,8 @@ use super::{AGENT_CLI_STATE_DIRS, AGENT_CLI_STATE_FILE_PREFIXES};
 /// - `cache`: model metadata, delegation progress, vision and document caches.
 /// - `images`: images attached to a turn (`image.attach_bytes`).
 /// - `image_cache`, `audio_cache`: generated media on its way to the chat.
+/// - `mcp-tokens`: the MCP servers' sign-ins, which the runtime refreshes
+///   (the sandboxed home's own copy, ADR-0140).
 pub(super) const RUNTIME_STATE_DIRS: &[&str] = &[
     "workspace",
     "sessions",
@@ -37,6 +39,7 @@ pub(super) const RUNTIME_STATE_DIRS: &[&str] = &[
     "images",
     "image_cache",
     "audio_cache",
+    "mcp-tokens",
 ];
 
 /// The files at the top of the runtime's home the jail may write: the
@@ -64,6 +67,9 @@ pub(super) struct SandboxGrants<'a> {
     pub hermes_home: &'a Path,
     /// The runtime's installation (source and virtualenv): never written.
     pub runtime_dir: &'a Path,
+    /// Homes of processes outside the jail (the shared home of the
+    /// unrestricted runtime and the gateway): never written at all.
+    pub closed_homes: &'a [PathBuf],
     /// Shared and per-session temp folders.
     pub temp_roots: &'a [PathBuf],
     pub agent_cli_access: bool,
@@ -209,7 +215,15 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
         "  (subpath {})\n",
         sbpl_quote(&grants.runtime_dir.to_string_lossy())
     ));
-    for ancestor in ancestors(&[grants.hermes_home, grants.runtime_dir]) {
+    for closed in grants.closed_homes {
+        out.push_str(&format!(
+            "  (subpath {})\n",
+            sbpl_quote(&closed.to_string_lossy())
+        ));
+    }
+    let mut guarded: Vec<&Path> = vec![grants.hermes_home, grants.runtime_dir];
+    guarded.extend(grants.closed_homes.iter().map(PathBuf::as_path));
+    for ancestor in ancestors(&guarded) {
         out.push_str(&format!(
             "  (literal {})\n",
             sbpl_quote(&ancestor.to_string_lossy())
@@ -262,11 +276,29 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
         ));
     }
     out.push_str(")\n");
+    // ...and stays where it is: a folder of the jail's own, carrying links
+    // or pipes, cannot be renamed in its place.
+    out.push_str("(deny file-write-unlink\n");
+    for dir in RUNTIME_STATE_DIRS {
+        out.push_str(&format!(
+            "  (literal {})\n",
+            sbpl_quote(&grants.hermes_home.join(dir).to_string_lossy())
+        ));
+    }
+    out.push_str(")\n");
     out.push_str("(deny file-link\n");
     for filter in &linkless {
         out.push_str(&format!("  {filter}\n"));
     }
     out.push_str(")\n\n");
+
+    // ADR-0140: no signal to a process outside the jail (the app, the
+    // gateway, the unrestricted runtime: stopping one would have the system
+    // start it again on the jail's terms). The runtime still stops its own
+    // children, which inherit the profile, in their own process groups too.
+    out.push_str(";; Signals: only to processes of this same sandbox.\n");
+    out.push_str("(deny signal (target others))\n");
+    out.push_str("(allow signal (target same-sandbox))\n\n");
 
     out.push_str(";; Secret-read denylist: reads are otherwise open so the assistant can\n");
     out.push_str(";; work on the user's files, but credential stores stay off-limits.\n");

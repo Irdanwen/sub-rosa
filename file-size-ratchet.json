@@ -2,13 +2,13 @@
   "ceiling": 2000,
   "exceptions": {
     "src/components/agent/AgentWorkspace.tsx": 13085,
-    "src-tauri/src/hermes_bridge.rs": 10665,
+    "src-tauri/src/hermes_bridge.rs": 10718,
     "src-tauri/src/dictation.rs": 5775,
     "src-tauri/src/db/repositories.rs": 5350,
     "src/app/App.tsx": 3793,
     "src/lib/tauri.ts": 2675,
+    "src-tauri/src/commands.rs": 2510,
     "src-tauri/src/audio/turns.rs": 2497,
-    "src-tauri/src/commands.rs": 2495,
     "src-tauri/src/domain/processing.rs": 2384
   }
 }

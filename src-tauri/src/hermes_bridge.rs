@@ -1126,10 +1126,14 @@ async fn start_hermes_bridge_inner(
         "ws://127.0.0.1:{port}/api/ws?token={}",
         urlencoding::encode(&token)
     );
-    let hermes_home = resolve_june_hermes_home(app)?;
+    // ADR-0140: the sandboxed runtime lives in a home of its own.
+    let hermes_home = home_split::home_for_mode(app, full_mode)?;
     let command_resolution = resolve_hermes_command(app, &hermes_home).await?;
     let command = command_resolution.command;
     let _command_source = command_resolution.source;
+    if !full_mode {
+        home_split::migrate_once(&hermes_home).await?;
+    }
     let default_cwd = hermes_home.join("workspace");
     std::fs::create_dir_all(&default_cwd)
         .map_err(|error| AppError::new("hermes_bridge_workspace_failed", error.to_string()))?;
@@ -2663,7 +2667,7 @@ pub async fn hermes_bridge_reset_cron_store(
             "Hermes bridge is not running.",
         ));
     };
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
     if !cron_store_is_corrupt(&hermes_home) {
         return Err(AppError::new(
             "hermes_cron_store_healthy",
@@ -3445,14 +3449,9 @@ pub(crate) async fn hermes_api_json(
     path: &str,
     body: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, AppError> {
-    let connections = live_connections(bridge)?;
-    let Some(connection) = connections.first() else {
-        return Err(AppError::new(
-            "hermes_bridge_not_running",
-            "Hermes bridge is not running.",
-        ));
-    };
-    hermes_connection_json(connection, method, path, body).await
+    // ADR-0140: each mode has its home; the request goes to the one it is
+    // about (sessions span both, routines and messaging are the shared one's).
+    home_split::api_json(&live_connections(bridge)?, method, path, body).await
 }
 
 /// The generic admin proxy the foundation admin client (`src/lib/hermes-admin`)
@@ -3539,7 +3538,7 @@ fn build_hermes_mcp_login_command(
     server: &str,
     _profile: Option<&str>,
 ) -> Command {
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
     let mut cmd = Command::new(&connection.command);
     cmd.args(["mcp", "login", server]);
     // Always the default profile, whatever the webview asked (ADR-0140): the
@@ -3767,6 +3766,11 @@ pub async fn hermes_mcp_oauth_login(
         )
     })??;
 
+    // The token lands in the shared home (the CLI runs there): the sandboxed
+    // runtime gets a copy, from the shared home to the jail's, never back.
+    if join.exit_success {
+        home_split::copy_mcp_tokens(Path::new(&connection.hermes_home), &server);
+    }
     let combined = format!("{}\n{}", join.stdout, join.stderr);
     let auth_url = extract_authorization_url(&combined);
     // Open the authorization URL in the OS browser so the user can complete the
@@ -3813,7 +3817,7 @@ fn build_hermes_skill_reset_command(
     restore: bool,
     _profile: Option<&str>,
 ) -> Command {
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
     let mut cmd = Command::new(&connection.command);
     cmd.args(["skills", "reset", name]);
     if restore {
@@ -4012,7 +4016,7 @@ fn build_hermes_skill_tap_command(
     path: Option<&str>,
     _profile: Option<&str>,
 ) -> Command {
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
     let mut cmd = Command::new(&connection.command);
     cmd.args(["skills", "tap", subcommand]);
     if let Some(repo) = repo {
@@ -4687,7 +4691,7 @@ pub async fn hermes_list_skill_bundles(
     request: ListHermesSkillBundlesRequest,
 ) -> Result<Vec<HermesSkillBundle>, AppError> {
     let connection = bundle_connection(&bridge, &request.mode)?;
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
     let bundles_dir = resolve_bundles_dir(&hermes_home, request.profile.as_deref())?;
     read_bundles_in_dir(&bundles_dir)
 }
@@ -4702,7 +4706,7 @@ pub async fn hermes_save_skill_bundle(
     request: SaveHermesSkillBundleRequest,
 ) -> Result<HermesSkillBundle, AppError> {
     let connection = bundle_connection(&bridge, &request.mode)?;
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
     let bundles_dir = resolve_bundles_dir(&hermes_home, request.profile.as_deref())?;
 
     let mut bundle = request.bundle;
@@ -4752,7 +4756,7 @@ pub async fn hermes_delete_skill_bundle(
     request: DeleteHermesSkillBundleRequest,
 ) -> Result<(), AppError> {
     let connection = bundle_connection(&bridge, &request.mode)?;
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
     let bundles_dir = resolve_bundles_dir(&hermes_home, request.profile.as_deref())?;
     let file = resolve_bundle_file(&bundles_dir, request.slug.trim())?;
     match fs::remove_file(&file) {
@@ -5202,8 +5206,22 @@ async fn ensure_hermes_gateway_running(
 }
 
 async fn hermes_gateway_running(connection: &HermesBridgeConnection) -> Result<bool, AppError> {
-    let status =
-        hermes_connection_json(connection, reqwest::Method::GET, "/api/status", None).await?;
+    // The sandboxed runtime's dashboard knows only its own home, which has
+    // no gateway (ADR-0140): ask the shared home.
+    let status = if connection.full_mode {
+        hermes_connection_json(connection, reqwest::Method::GET, "/api/status", None).await?
+    } else {
+        let shared = home_split::shared_home(Path::new(&connection.hermes_home));
+        admin_once::read_on(
+            &connection.command,
+            &shared,
+            None,
+            reqwest::Method::GET,
+            "/api/status",
+            None,
+        )
+        .await?
+    };
     Ok(status
         .get("gateway_running")
         .and_then(serde_json::Value::as_bool)
@@ -5300,7 +5318,9 @@ async fn run_hermes_gateway_start(connection: &HermesBridgeConnection) -> Result
 }
 
 fn hermes_gateway_start_command(connection: &HermesBridgeConnection) -> Command {
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    // ADR-0140: the gateway lives in the shared home, never the jail's,
+    // whichever runtime asks for it.
+    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
     // The service the runtime registers restarts without a profile flag.
     home_prep::neutralize_active_profile(&hermes_home);
     let mut cmd = gateway_start::start_command(connection, &hermes_home);
@@ -5489,7 +5509,8 @@ pub async fn open_hermes_tui_debug(
         ));
     }
 
-    let hermes_home = resolve_june_hermes_home(&app)?;
+    // The home of the session's mode (ADR-0140).
+    let hermes_home = home_split::home_for_mode(&app, request.unrestricted)?;
     let command_resolution = resolve_hermes_command(&app, &hermes_home).await?;
     let command = command_resolution.command;
 
@@ -6612,6 +6633,14 @@ fn prepare_sandbox(
     let canonical = |path: PathBuf| std::fs::canonicalize(&path).unwrap_or(path);
     let runtime_dir = canonical(managed_hermes_runtime_dir(app).ok()?);
     let hermes_home = canonical(hermes_home.to_path_buf());
+    // ADR-0140: the shared home (the unrestricted runtime's, the gateway's)
+    // is closed to the jail as a whole.
+    let shared = canonical(home_split::shared_home(&hermes_home));
+    let closed_homes: Vec<PathBuf> = if shared != hermes_home {
+        vec![shared]
+    } else {
+        Vec::new()
+    };
     let temp_roots = sandbox_profile::sandbox_temp_roots();
     // `working_dir` only ever arrives here through
     // `hermes_working_dir::validate_working_dir` (the spawn re-validates on
@@ -6621,6 +6650,7 @@ fn prepare_sandbox(
         home: &home,
         hermes_home: &hermes_home,
         runtime_dir: &runtime_dir,
+        closed_homes: &closed_homes,
         temp_roots: &temp_roots,
         agent_cli_access,
         working_dir,
@@ -6907,10 +6937,11 @@ async fn sync_hermes_config(
     // ADR-0140: the settings a person made in Settings, kept by the app.
     let overlay = admin_settings::load(hermes_home).config;
     let mut skill_dirs = external_skill_dirs.to_vec();
-    for dir in overlay.skills_external_dirs.iter().map(PathBuf::from) {
-        if !skill_dirs.contains(&dir) {
-            skill_dirs.push(dir);
-        }
+    // The skills a person installs land in the shared home; the sandboxed
+    // runtime reads them there (it cannot write them).
+    let shared_skills = home_split::shared_home(hermes_home).join("skills");
+    if hermes_home != home_split::shared_home(hermes_home) && !skill_dirs.contains(&shared_skills) {
+        skill_dirs.push(shared_skills);
     }
     let config = render_hermes_config(
         &model,
@@ -6927,7 +6958,11 @@ async fn sync_hermes_config(
         Some(june_studio_mcp),
     );
     let guard = guard::config_block(crate::protected_mode::restrictions().memory_off);
-    let config = admin_settings::apply_overlay(config + &guard, &overlay);
+    let base = config + &guard;
+    // Kept so a settings change can write this home's file again (ADR-0140).
+    std::fs::write(admin_settings::base_path(hermes_home), &base)
+        .map_err(|error| AppError::new("hermes_bridge_config_failed", error.to_string()))?;
+    let config = admin_settings::apply_overlay(base, &overlay);
     home_prep::write_owned(&hermes_home.join("config.yaml"), &config)
         .map_err(|error| AppError::new("hermes_bridge_config_failed", error.to_string()))?;
     home_prep::prepare(hermes_home)
@@ -7106,16 +7141,29 @@ struct FilesystemRootCandidate {
 
 fn filesystem_roots(hermes_home: &Path) -> Result<Vec<FilesystemRootCandidate>, AppError> {
     let mut roots = Vec::new();
-    for (id, label, relative, description) in [
+    // ADR-0140: sandboxed sessions work in their own home's workspace, the
+    // unrestricted ones (and uploads) in the shared home's.
+    let sandboxed = home_split::sandboxed_home(hermes_home);
+    let shared = home_split::shared_home(hermes_home);
+    for (id, label, home, relative, description) in [
         (
             "workspace",
             "Workspace",
+            &sandboxed,
             "workspace",
             "Hermes scratch files and generated outputs.",
         ),
         (
+            "workspace-unrestricted",
+            "Unrestricted workspace",
+            &shared,
+            "workspace",
+            "Files of unrestricted sessions, and the files you attach.",
+        ),
+        (
             "memory",
             "Memory",
+            &shared,
             "memories",
             "Persistent Hermes memory files and stores.",
         ),
@@ -7123,7 +7171,7 @@ fn filesystem_roots(hermes_home: &Path) -> Result<Vec<FilesystemRootCandidate>, 
         roots.push(FilesystemRootCandidate {
             id: id.to_string(),
             label: label.to_string(),
-            path: hermes_home.join(relative),
+            path: home.join(relative),
             description: description.to_string(),
         });
     }
@@ -8074,6 +8122,7 @@ use builtin_mcp::{
 };
 pub mod guard;
 mod home_prep;
+pub(crate) mod home_split;
 #[cfg(test)]
 #[cfg(target_os = "macos")]
 mod jail_runtime_tests;
@@ -9495,14 +9544,18 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     #[tokio::test]
     async fn gateway_start_reports_nonzero_exit() {
-        let home = tempfile::tempdir().expect("tempdir");
+        let data = tempfile::tempdir().expect("tempdir");
+        // The gateway runs in the shared home (ADR-0140), here beside the
+        // sandboxed one the connection serves.
+        std::fs::create_dir_all(data.path().join(home_split::SHARED_HOME)).expect("shared home");
+        let home = data.path().join(home_split::SANDBOXED_HOME);
         let connection = HermesBridgeConnection {
             base_url: "http://127.0.0.1:1".to_string(),
             ws_url: "ws://127.0.0.1:1/api/ws".to_string(),
             token: "session-token".to_string(),
             port: 1,
             command: "/usr/bin/false".to_string(),
-            hermes_home: home.path().to_string_lossy().into_owned(),
+            hermes_home: home.to_string_lossy().into_owned(),
             cwd: None,
             working_dir: None,
             provider_proxy_port: 2,

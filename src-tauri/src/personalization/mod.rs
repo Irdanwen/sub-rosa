@@ -248,17 +248,20 @@ pub async fn refresh_soul(app: &AppHandle) {
     let Ok(dir) = crate::app_paths::app_data_dir(app) else {
         return;
     };
-    let path = dir.join("hermes").join("SOUL.md");
-    let Ok(current) = fs::read_to_string(&path) else {
-        return;
-    };
     let Some(section) = soul_section_for_app(app).await else {
         return;
     };
-    if let Some(next) = splice_soul_section(&current, &section) {
-        if next != current {
-            if let Err(error) = fs::write(&path, next) {
-                tracing::warn!("Could not refresh the personal section of the soul: {error}");
+    // Each runtime mode has its home, and its soul (ADR-0140).
+    for home in ["hermes", "hermes-sandboxed"] {
+        let path = dir.join(home).join("SOUL.md");
+        let Ok(current) = fs::read_to_string(&path) else {
+            continue;
+        };
+        if let Some(next) = splice_soul_section(&current, &section) {
+            if next != current {
+                if let Err(error) = fs::write(&path, next) {
+                    tracing::warn!("Could not refresh the personal section of the soul: {error}");
+                }
             }
         }
     }

@@ -144,17 +144,20 @@ impl AdminResult {
     }
 }
 
-/// Runs one settings change outside the jail, for the runtime `connection`
-/// serves (its home and its interpreter). Answers like the dashboard would:
-/// the route's JSON on success, `Hermes API returned <status>: <body>` as
-/// the error otherwise, which the webview's transport reads back.
+/// Runs one settings change outside the jail, with the interpreter of the
+/// runtime `connection` serves, always on the shared home: the settings a
+/// person owns are kept once, for both homes, and the sandboxed home's
+/// `config.yaml` and `.env` are written again from them right after
+/// (ADR-0140). Answers like the dashboard would: the route's JSON on
+/// success, `Hermes API returned <status>: <body>` as the error otherwise,
+/// which the webview's transport reads back.
 pub(super) async fn run(
     connection: &HermesBridgeConnection,
     method: Method,
     path: &str,
     body: Option<Value>,
 ) -> Result<Value, AppError> {
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    let hermes_home = super::home_split::shared_home(Path::new(&connection.hermes_home));
     refuse_undeclared_key(&hermes_home, &method, path, body.as_ref())?;
     let python = hermes_python_command(&connection.command);
     let request = serde_json::json!({
@@ -168,7 +171,41 @@ pub(super) async fn run(
         tauri::async_runtime::spawn_blocking(move || run_blocking(&python, &home, &request))
             .await
             .map_err(|error| failed(error.to_string()))??;
-    respond(&hermes_home, result)
+    let answer = respond(&hermes_home, result)?;
+    if method != Method::GET {
+        let sandboxed = super::home_split::sandboxed_home(&hermes_home);
+        if let Err(error) = admin_settings::reapply(&sandboxed) {
+            eprintln!("hermes settings: the sandboxed home keeps its last settings: {error}");
+        }
+    }
+    Ok(answer)
+}
+
+/// A request on one home with no runtime running there (ADR-0140, the
+/// merged list of conversations, a transcript): the runtime's own route,
+/// once, in a process of the app, under the jail's profile when `jail` is
+/// given (the sandboxed home). Nothing is kept from it.
+pub(super) async fn read_on(
+    hermes_command: &str,
+    hermes_home: &Path,
+    jail: Option<PathBuf>,
+    method: Method,
+    path: &str,
+    body: Option<Value>,
+) -> Result<Value, AppError> {
+    let python = hermes_python_command(hermes_command);
+    let request = serde_json::json!({
+        "method": method.as_str(),
+        "path": path,
+        "body": body,
+    });
+    let home = hermes_home.to_path_buf();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        run_blocking_in(&python, &home, &request, jail.as_deref())
+    })
+    .await
+    .map_err(|error| failed(error.to_string()))??;
+    answer_only(result.0)
 }
 
 /// Before a start: copies the runtime's bundled skills into its home (the
@@ -204,19 +241,42 @@ pub(super) fn run_blocking(
     hermes_home: &Path,
     request: &Value,
 ) -> Result<AdminResultFile, AppError> {
+    run_blocking_in(python, hermes_home, request, None)
+}
+
+/// [`run_blocking`], under the Seatbelt profile at `jail` when given: the
+/// result then goes to the temp folder, the one place the jail may write it.
+pub(super) fn run_blocking_in(
+    python: &str,
+    hermes_home: &Path,
+    request: &Value,
+    jail: Option<&Path>,
+) -> Result<AdminResultFile, AppError> {
     let data_dir = hermes_home.parent().unwrap_or(hermes_home);
     let script_dir = data_dir.join(JUNE_CONTEXT_MCP_DIR_NAME);
     std::fs::create_dir_all(&script_dir).map_err(|error| failed(error.to_string()))?;
     let script = script_dir.join(ADMIN_SCRIPT_NAME);
     std::fs::write(&script, ADMIN_SCRIPT).map_err(|error| failed(error.to_string()))?;
     let token = random_token();
-    let out = script_dir.join(format!(
+    let out_dir = if jail.is_some() {
+        std::env::temp_dir()
+    } else {
+        script_dir.clone()
+    };
+    let out = out_dir.join(format!(
         "admin-result-{}.json",
         &token[..16.min(token.len())]
     ));
     let _ = std::fs::remove_file(&out);
 
-    let mut cmd = Command::new(python);
+    let mut cmd = match jail {
+        Some(profile) => {
+            let mut cmd = Command::new(super::SANDBOX_EXEC_PATH);
+            cmd.arg("-f").arg(profile).arg(python);
+            cmd
+        }
+        None => Command::new(python),
+    };
     cmd.arg(&script).arg("--out").arg(&out);
     apply_isolated_hermes_env(&mut cmd, hermes_home, &token, None);
     cmd.env("HERMES_NONINTERACTIVE", "1")
@@ -250,6 +310,25 @@ impl AdminResultFile {
     pub(super) fn status(&self) -> u16 {
         self.0.status
     }
+}
+
+/// The route's answer, as the dashboard would give it, nothing kept.
+fn answer_only(result: AdminResult) -> Result<Value, AppError> {
+    if !(200..300).contains(&result.status) {
+        let reason = reqwest::StatusCode::from_u16(result.status)
+            .ok()
+            .and_then(|status| status.canonical_reason())
+            .unwrap_or("");
+        let body = match &result.body {
+            Value::String(text) => text.clone(),
+            other => other.to_string(),
+        };
+        return Err(AppError::new(
+            "hermes_bridge_api_failed",
+            format!("Hermes API returned {} {reason}: {body}", result.status),
+        ));
+    }
+    Ok(result.body)
 }
 
 /// Keeps the person's settings after a change that worked, and answers.

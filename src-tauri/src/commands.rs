@@ -2120,18 +2120,34 @@ pub(crate) async fn hydrate_agent_task_from_hermes(
     crate::assistants::general::ensure_general_continuation(&repos.pool, task_id).await?;
     let task = repos.get_agent_task(task_id).await?;
     let paths = app_paths(app)?;
-    let hermes_db_path = paths.data_dir.join("hermes").join("state.db");
-    if !hermes_db_path.exists() {
-        return Ok(());
+    // A session lives in the home of its mode (ADR-0140): the sandboxed one
+    // first, where most are, read as data.
+    let mut found = None;
+    for home in ["hermes-sandboxed", "hermes"] {
+        let hermes_db_path = paths.data_dir.join(home).join("state.db");
+        if !hermes_db_path.exists() {
+            continue;
+        }
+        let pool = hermes_state_pool(&hermes_db_path).await?;
+        let session_id = match task.hermes_session_id.clone() {
+            Some(session_id) if !session_id.trim().is_empty() => {
+                let present = query("SELECT 1 FROM sessions WHERE id = ? LIMIT 1")
+                    .bind(&session_id)
+                    .fetch_optional(&pool)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some();
+                present.then_some(session_id)
+            }
+            _ => match_hermes_session_for_task(repos, &pool, &task).await?,
+        };
+        if let Some(session_id) = session_id {
+            found = Some((pool, session_id));
+            break;
+        }
     }
-    let pool = hermes_state_pool(&hermes_db_path).await?;
-
-    let session_id = match task.hermes_session_id.clone() {
-        Some(session_id) if !session_id.trim().is_empty() => Some(session_id),
-        _ => match_hermes_session_for_task(repos, &pool, &task).await?,
-    };
-
-    let Some(session_id) = session_id else {
+    let Some((pool, session_id)) = found else {
         return Ok(());
     };
 
@@ -2256,15 +2272,14 @@ async fn match_hermes_session_for_task(
 
 /// Cached read pool for the Hermes `state.db`, re-opened only if the path
 /// changes, so per-task polling does not open a fresh pool every second.
-static HERMES_STATE_POOL: tokio::sync::Mutex<Option<(PathBuf, SqlitePool)>> =
-    tokio::sync::Mutex::const_new(None);
+static HERMES_STATE_POOL: tokio::sync::Mutex<Vec<(PathBuf, SqlitePool)>> =
+    tokio::sync::Mutex::const_new(Vec::new());
 
 async fn hermes_state_pool(path: &Path) -> Result<SqlitePool, AppError> {
     let mut cached = HERMES_STATE_POOL.lock().await;
-    if let Some((cached_path, pool)) = cached.as_ref() {
-        if cached_path == path && !pool.is_closed() {
-            return Ok(pool.clone());
-        }
+    cached.retain(|(_, pool)| !pool.is_closed());
+    if let Some((_, pool)) = cached.iter().find(|(cached_path, _)| cached_path == path) {
+        return Ok(pool.clone());
     }
     let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
         .map_err(|error| AppError::new("hermes_state_unavailable", error.to_string()))?
@@ -2274,7 +2289,7 @@ async fn hermes_state_pool(path: &Path) -> Result<SqlitePool, AppError> {
         .connect_with(options)
         .await
         .map_err(|error| AppError::new("hermes_state_unavailable", error.to_string()))?;
-    *cached = Some((path.to_path_buf(), pool.clone()));
+    cached.push((path.to_path_buf(), pool.clone()));
     Ok(pool)
 }
 

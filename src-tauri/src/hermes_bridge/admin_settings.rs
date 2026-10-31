@@ -47,6 +47,10 @@ pub(super) struct HermesSettings {
     pub quarantine_done: bool,
     #[serde(default)]
     pub quarantine: Option<super::quarantine::QuarantineRecord>,
+    /// Whether the sandboxed home received, once, the conversations of the
+    /// shared home from before the split (`home_split::migrate_once`).
+    #[serde(default)]
+    pub sandboxed_home_seeded: bool,
 }
 
 /// Where a `.env` key comes from, which decides what may pass.
@@ -234,6 +238,41 @@ pub(super) fn extract(config: &Value) -> ConfigOverlay {
     overlay
 }
 
+/// Where the app keeps a home's `config.yaml` as it rendered it, before the
+/// person's settings: in its data folder, so a settings change can write
+/// that home's file again without a restart (`reapply`).
+pub(super) fn base_path(hermes_home: &Path) -> PathBuf {
+    let name = hermes_home
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "hermes".to_string());
+    hermes_home
+        .parent()
+        .unwrap_or(hermes_home)
+        .join(format!("{name}.config-base.yaml"))
+}
+
+/// Writes a home's `config.yaml` and `.env` again from the base the app
+/// rendered at its last start and the record (ADR-0140): after a settings
+/// change made on the shared home, the sandboxed home shows it too.
+pub(super) fn reapply(hermes_home: &Path) -> std::io::Result<()> {
+    let base = match std::fs::read_to_string(base_path(hermes_home)) {
+        Ok(base) => base,
+        // Never started: its first start renders everything.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    let settings = load(hermes_home);
+    super::home_prep::write_owned(
+        &hermes_home.join("config.yaml"),
+        &apply_overlay(base, &settings.config),
+    )?;
+    super::home_prep::write_owned(
+        &hermes_home.join(".env"),
+        &render_dotenv(&settings.env.clone().unwrap_or_default(), &settings),
+    )
+}
+
 /// Writes the person's settings into the `config.yaml` the app rendered.
 /// Values go in as JSON, which YAML reads as flow collections, inserted
 /// under the sections the app's file already has (a second `skills:` would
@@ -269,6 +308,7 @@ pub(super) fn apply_overlay(config: String, overlay: &ConfigOverlay) -> String {
         .iter()
         .map(|(platform, enabled)| line(platform, &serde_json::json!({ "enabled": enabled })))
         .collect();
+    let config = insert_external_dirs(config, &overlay.skills_external_dirs);
     let mut config = insert_under(config, "skills:", &skills);
     config = insert_under(config, "platforms:", &platforms);
     config = insert_under(config, "platform_toolsets:", &toolsets);
@@ -280,6 +320,30 @@ pub(super) fn apply_overlay(config: String, overlay: &ConfigOverlay) -> String {
         }
         config.push_str("mcp:\n");
         config.push_str(&line("exposure_policy", policy));
+    }
+    config
+}
+
+/// Adds the person's skill folders to `skills.external_dirs` (the app's own
+/// come first), each once.
+fn insert_external_dirs(mut config: String, dirs: &[String]) -> String {
+    let lines: String = dirs
+        .iter()
+        .filter(|dir| !config.contains(&json(&Value::from(dir.as_str()))))
+        .map(|dir| format!("    - {}\n", json(&Value::from(dir.as_str()))))
+        .collect();
+    if lines.is_empty() {
+        return config;
+    }
+    if config.contains("\n  external_dirs: []\n") {
+        return config.replace(
+            "\n  external_dirs: []\n",
+            &format!("\n  external_dirs:\n{lines}"),
+        );
+    }
+    if let Some(at) = config.find("\n  external_dirs:\n") {
+        config.insert_str(at + "\n  external_dirs:\n".len(), &lines);
+        return config;
     }
     config
 }
@@ -503,6 +567,7 @@ mod tests {
             platforms_enabled: [("telegram".to_string(), json!(true))]
                 .into_iter()
                 .collect(),
+            skills_external_dirs: vec!["/Users/a/my skills".into()],
             ..ConfigOverlay::default()
         };
         let text = apply_overlay(base.clone(), &overlay);
@@ -513,7 +578,7 @@ mod tests {
         assert_eq!(value["platform_toolsets"]["cron"][0], "web");
         assert_eq!(value["platform_toolsets"]["cli"][0], "web");
         assert_eq!(value["skills"]["disabled"][0], "pdf");
-        assert!(value["skills"]["external_dirs"].is_sequence());
+        assert_eq!(value["skills"]["external_dirs"][0], "/Users/a/my skills");
         assert_eq!(value["mcp"]["exposure_policy"]["default"], "ask");
         assert_eq!(value["plugins"]["enabled"][0], "subrosa_guard");
         assert_eq!(value["platforms"]["telegram"]["enabled"], true);
