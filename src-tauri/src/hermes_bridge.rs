@@ -1270,10 +1270,15 @@ async fn start_hermes_bridge_inner(
     // Its own session, so teardown reaps the whole tree (JUN-338, see
     // `shutdown_hermes_process`) and the jail cannot join the app's group.
     sandbox_profile::own_session(&mut cmd);
-    // Everything a jailed runtime starts carries its mark (D5).
+    // Everything a jailed runtime starts carries its mark (D5), inherits no
+    // way to the person's agents and has its own temp folder (M1).
     let jail_mark = sandboxed.then(jail_reaper::new_mark);
     if let Some(mark) = &jail_mark {
         cmd.env(jail_reaper::JAIL_MARK_ENV, mark);
+        sandbox_profile::apply_jail_env(
+            &mut cmd,
+            sandbox_profile::prepare_jail_tmp().ok().as_deref(),
+        );
     }
 
     let mut child = cmd.spawn().map_err(|error| {
@@ -3785,10 +3790,9 @@ pub async fn hermes_mcp_oauth_login(
     let mut auth_url_unverified = false;
     if let Some(url) = auth_url.as_deref() {
         let home = home_split::shared_home(Path::new(&connection.hermes_home));
-        if mcp_oauth_origin::authorization_url_trusted(&home, &server, url).await {
-            open_url_in_browser(url);
-        } else {
-            auth_url_unverified = true;
+        match mcp_oauth_origin::openable_authorization_url(&home, &server, url).await {
+            Some(checked) => open_url_in_browser(&checked),
+            None => auth_url_unverified = true,
         }
     }
 

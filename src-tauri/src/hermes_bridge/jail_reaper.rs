@@ -9,11 +9,16 @@
 //! process still in its session, and every process whose environment carries
 //! the mark each jailed spawn passes down; then it kills them all.
 //!
-//! What stays out of reach: a process that left the session, whose parent
-//! is already gone, and whose environment the system does not show or no
-//! longer carries the mark (an Apple-signed program started with `env -i`
-//! through a double fork). It still runs under the jail, with none of the
-//! app's privacy grants (ADR-0140, D2), and nothing restarts it.
+//! And, for what escapes those three (a double fork that leaves the session,
+//! loses its parent and runs an Apple-signed program, whose environment the
+//! system hides): every orphan the app is responsible for that runs under a
+//! sandbox profile, but the system's own services the app uses (WebKit's
+//! and other XPC services, under `/System`).
+//!
+//! What stays out of reach: a process that also gave up the app's
+//! responsibility (a spawn with the private disclaim attribute), or that
+//! runs an XPC service's program. It still runs under the jail, with none
+//! of the app's privacy grants (ADR-0140, D2), and nothing restarts it.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -125,6 +130,11 @@ fn mark_needle(mark: &str) -> Vec<u8> {
 #[cfg(target_os = "macos")]
 fn gather(leader: u32, mark: &str) -> Vec<u32> {
     let own = std::process::id();
+    // The app is its own responsible process when the system started it;
+    // started from a terminal (development), the terminal is.
+    // SAFETY: a pid in, a pid out.
+    let responsible_for_app =
+        unsafe { responsibility_get_pid_responsible_for_pid(own as libc::pid_t) } as u32;
     let needle = mark_needle(mark);
     let table: Vec<(u32, u32)> = all_pids()
         .into_iter()
@@ -132,12 +142,14 @@ fn gather(leader: u32, mark: &str) -> Vec<u32> {
         .collect();
     let mut doomed: Vec<u32> = table
         .iter()
-        .map(|(pid, _)| *pid)
-        .filter(|pid| {
+        .filter(|(pid, parent)| {
             // SAFETY: getsid(2) on a pid read from the process table.
             let session = unsafe { libc::getsid(*pid as libc::pid_t) };
-            session == leader as libc::pid_t || environment_holds(*pid, &needle)
+            session == leader as libc::pid_t
+                || environment_holds(*pid, &needle)
+                || (*parent == 1 && jailed_orphan_of_this_app(*pid, responsible_for_app))
         })
+        .map(|(pid, _)| *pid)
         .collect();
     let mut frontier = vec![leader];
     frontier.extend(doomed.iter().copied());
@@ -156,6 +168,54 @@ fn gather(leader: u32, mark: &str) -> Vec<u32> {
 #[cfg(not(target_os = "macos"))]
 fn gather(_leader: u32, _mark: &str) -> Vec<u32> {
     Vec::new()
+}
+
+#[cfg(target_os = "macos")]
+extern "C" {
+    fn sandbox_check(
+        pid: libc::pid_t,
+        operation: *const libc::c_char,
+        filter: libc::c_int,
+        ...
+    ) -> libc::c_int;
+    fn responsibility_get_pid_responsible_for_pid(pid: libc::pid_t) -> libc::pid_t;
+}
+
+/// An orphan whose responsible process is the app's (`app`), under a
+/// sandbox profile, that is not one of the system's XPC services (F1).
+#[cfg(target_os = "macos")]
+fn jailed_orphan_of_this_app(pid: u32, app: u32) -> bool {
+    // SAFETY: both calls take a pid and read the kernel's answer; the
+    // sandbox check asks with no operation, only whether a profile applies.
+    let (responsible, sandboxed) = unsafe {
+        (
+            responsibility_get_pid_responsible_for_pid(pid as libc::pid_t),
+            sandbox_check(pid as libc::pid_t, std::ptr::null(), 0),
+        )
+    };
+    if responsible != app as libc::pid_t || sandboxed <= 0 {
+        return false;
+    }
+    let path = program_of(pid);
+    !(path.starts_with("/System/") || path.contains(".xpc/"))
+}
+
+#[cfg(target_os = "macos")]
+fn program_of(pid: u32) -> String {
+    let mut buffer = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+    // SAFETY: the buffer holds PROC_PIDPATHINFO_MAXSIZE bytes.
+    let length = unsafe {
+        libc::proc_pidpath(
+            pid as libc::c_int,
+            buffer.as_mut_ptr().cast(),
+            buffer.len() as u32,
+        )
+    };
+    if length <= 0 {
+        return String::new();
+    }
+    buffer.truncate(length as usize);
+    String::from_utf8_lossy(&buffer).into_owned()
 }
 
 #[cfg(target_os = "macos")]
@@ -238,10 +298,15 @@ fn environment_holds(pid: u32, needle: &[u8]) -> bool {
 mod tests {
     use super::*;
 
+    /// Stopping a jailed runtime kills every jailed orphan of the app: the
+    /// two tests that make one take turns.
+    static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// ADR-0140 (D5): a grandchild that left the runtime's session with
     /// `setsid()` dies with the runtime all the same.
     #[test]
     fn a_process_that_left_the_session_dies_with_the_runtime() {
+        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
         let mark = new_mark();
         let pid_file = tempfile::NamedTempFile::new().unwrap();
         let mut runtime = std::process::Command::new("/usr/bin/python3");
@@ -286,5 +351,62 @@ mod tests {
         }
         assert!(gone, "the grandchild outlived the runtime");
         assert_eq!(mark_of(runtime.id()), None);
+    }
+
+    /// ADR-0140 (F1): a double fork that leaves the session, loses its
+    /// parent and runs an Apple-signed program with an empty environment
+    /// dies with the runtime too.
+    #[test]
+    fn an_orphan_apple_program_without_the_mark_dies_with_the_runtime() {
+        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let mark = new_mark();
+        let pid_file = tempfile::NamedTempFile::new().unwrap();
+        let profile = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(profile.path(), "(version 1)\n(allow default)\n").unwrap();
+        let mut runtime = std::process::Command::new(super::super::SANDBOX_EXEC_PATH);
+        runtime
+            .arg("-f")
+            .arg(profile.path())
+            .args([
+                "/usr/bin/python3",
+                "-I",
+                "-c",
+                "import os,sys,time\nif os.fork() == 0:\n    os.setsid()\n    if os.fork() == 0:\n        os.execve('/bin/sh', ['/bin/sh', '-c', 'echo $$ > ' + sys.argv[1] + '; exec /bin/sleep 120'], {})\n    os._exit(0)\ntime.sleep(120)\n",
+            ])
+            .arg(pid_file.path())
+            .env(JAIL_MARK_ENV, &mark);
+        super::super::sandbox_profile::own_session(&mut runtime);
+        let mut runtime = runtime.spawn().unwrap();
+        let mut orphan = 0u32;
+        for _ in 0..100 {
+            if let Ok(text) = std::fs::read_to_string(pid_file.path()) {
+                if let Ok(pid) = text.trim().parse() {
+                    orphan = pid;
+                    break;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(orphan > 0, "the orphan never started");
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert_eq!(parent_of(orphan), Some(1), "not an orphan");
+        remember(runtime.id(), mark);
+        super::super::kill_process_group(runtime.id());
+        let _ = runtime.wait();
+        // SAFETY: kill(2) with signal 0 only asks whether the pid exists.
+        let alive = |pid: u32| unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
+        let mut gone = false;
+        for _ in 0..40 {
+            if !alive(orphan) {
+                gone = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        if !gone {
+            // SAFETY: cleanup of the test's own process.
+            unsafe { libc::kill(orphan as libc::pid_t, libc::SIGKILL) };
+        }
+        assert!(gone, "the orphan outlived the runtime");
     }
 }

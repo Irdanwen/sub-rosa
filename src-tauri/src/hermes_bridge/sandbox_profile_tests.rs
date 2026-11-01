@@ -26,6 +26,7 @@ fn grants<'a>(
         agent_cli_access,
         working_dir,
         result_dir: None,
+        jail_tmp: None,
     }
 }
 
@@ -274,6 +275,8 @@ impl KernelJail {
             std::fs::create_dir_all(working).ok()?;
         }
         let temp = sandbox_temp_roots();
+        let jail_tmp = root.join("jail-tmp");
+        std::fs::create_dir_all(&jail_tmp).ok()?;
         let profile = build_sandbox_profile(&SandboxGrants {
             home: &root,
             hermes_home: &hermes_home,
@@ -283,6 +286,7 @@ impl KernelJail {
             agent_cli_access,
             working_dir: working.as_deref(),
             result_dir: None,
+            jail_tmp: Some(&jail_tmp),
         });
         let profile_path = root.join("profile.sb");
         std::fs::write(&profile_path, profile).ok()?;
@@ -966,6 +970,7 @@ fn the_runtime_cannot_write_the_readers_answers() {
                 agent_cli_access: false,
                 working_dir: None,
                 result_dir,
+                jail_tmp: None,
             }),
         )
         .unwrap();
@@ -1009,4 +1014,115 @@ fn a_runtime_still_resolves_users_and_names_in_the_jail() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+/// ADR-0140 (M1): from the jail, no agent's or engine's unix socket answers
+/// (the ssh agent behind launchd's listeners, gpg, a container engine, a
+/// terminal multiplexer in the shared temp folder), while the jail's own
+/// sockets and name resolution still work.
+#[test]
+fn the_jail_reaches_no_agent_or_engine_socket() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let mut refused = vec![
+        jail.root.join(".gnupg/S.gpg-agent"),
+        jail.root.join(".colima/default/docker.sock"),
+        jail.root.join("tmux-501/default"),
+    ];
+    let own = jail.root.join("jail-tmp/own.sock");
+    let mut listeners = Vec::new();
+    for path in refused.iter().chain(std::iter::once(&own)) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        listeners.push(std::os::unix::net::UnixListener::bind(path).unwrap());
+    }
+    // The person's real ssh agent, when there is one.
+    if let Some(agent) = std::env::var_os("SSH_AUTH_SOCK").map(PathBuf::from) {
+        if agent.exists() {
+            refused.push(std::fs::canonicalize(&agent).unwrap_or(agent));
+        }
+    }
+    let probe = "import socket, sys\nfor p in sys.argv[1:]:\n    s = socket.socket(socket.AF_UNIX)\n    try:\n        s.connect(p)\n        print('CONNECTED', p)\n    except OSError as e:\n        print('refused', p)\n    s.close()\nsocket.getaddrinfo('localhost', 80)\nprint('NAMES')\n";
+    let out = Command::new(SANDBOX_EXEC_PATH)
+        .arg("-f")
+        .arg(&jail.profile_path)
+        .args(["/usr/bin/python3", "-I", "-c", probe])
+        .args(&refused)
+        .arg(&own)
+        .output()
+        .expect("run the socket probe");
+    let said = String::from_utf8_lossy(&out.stdout);
+    for path in &refused {
+        assert!(
+            said.contains(&format!("refused {}", path.display())),
+            "{} answered the jail:\n{said}",
+            path.display()
+        );
+    }
+    assert!(
+        said.contains(&format!("CONNECTED {}", own.display())),
+        "{said}"
+    );
+    assert!(said.contains("NAMES"), "{said}");
+    // A working folder spanning them does not reopen the agents' or the
+    // engines' sockets.
+    let spanning = KernelJail::new(false, Some(".")).unwrap();
+    let mut listeners2 = Vec::new();
+    let inside = [
+        spanning.root.join(".gnupg/S.gpg-agent"),
+        spanning.root.join(".colima/default/docker.sock"),
+    ];
+    for path in &inside {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        listeners2.push(std::os::unix::net::UnixListener::bind(path).unwrap());
+    }
+    let out = Command::new(SANDBOX_EXEC_PATH)
+        .arg("-f")
+        .arg(&spanning.profile_path)
+        .args(["/usr/bin/python3", "-I", "-c", probe])
+        .args(&inside)
+        .output()
+        .expect("run the socket probe");
+    let said = String::from_utf8_lossy(&out.stdout);
+    for path in &inside {
+        assert!(
+            said.contains(&format!("refused {}", path.display())),
+            "{} answered through the working folder:\n{said}",
+            path.display()
+        );
+    }
+    drop(listeners);
+    drop(listeners2);
+}
+
+/// ADR-0140 (M1): a jailed process inherits no way to the person's agents,
+/// and gets its own temp folder.
+#[test]
+fn a_jailed_process_inherits_no_agent_socket() {
+    let mut cmd = Command::new("/usr/bin/true");
+    cmd.env("SSH_AUTH_SOCK", "/private/var/run/x/Listeners")
+        .env("DOCKER_HOST", "unix:///x");
+    super::apply_jail_env(&mut cmd, Some(Path::new("/data/jail-tmp")));
+    let envs: Vec<_> = cmd.get_envs().collect();
+    for name in super::INHERITED_SOCKET_VARS {
+        assert!(
+            envs.iter()
+                .any(|(key, value)| key == name && value.is_none()),
+            "{name} is passed down"
+        );
+    }
+    assert!(envs
+        .iter()
+        .any(|(key, value)| *key == "TMPDIR"
+            && *value == Some(std::ffi::OsStr::new("/data/jail-tmp"))));
+}
+
+/// ADR-0140 (M2): the launchd client cannot run in the jail.
+#[test]
+fn the_launchd_client_cannot_run_in_the_jail() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let out = jail.sh("/bin/launchctl version");
+    assert!(!out.status.success(), "launchctl ran in the jail");
 }

@@ -305,6 +305,10 @@ pub(super) fn run_blocking_in(
     if let Some(mark) = &mark {
         super::sandbox_profile::own_session(&mut cmd);
         cmd.env(super::jail_reaper::JAIL_MARK_ENV, mark);
+        super::sandbox_profile::apply_jail_env(
+            &mut cmd,
+            super::sandbox_profile::prepare_jail_tmp().ok().as_deref(),
+        );
     }
     let mut child = cmd.spawn().map_err(|error| failed(error.to_string()))?;
     if let Some(mut stdin) = child.stdin.take() {

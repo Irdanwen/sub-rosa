@@ -1808,6 +1808,9 @@ describe("AppSettings", () => {
     await user.click(screen.getByRole("tab", { name: "Agent" }));
     expect(screen.getByText("In a sandboxed session")).toBeInTheDocument();
     expect(screen.getByText(/the command checker it would download stays off/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/use the clipboard, show notifications or take screenshots/),
+    ).toBeInTheDocument();
     expect(await screen.findByText(/3 items were moved/)).toBeInTheDocument();
     expect(screen.getByText(/Some may be yours/)).toBeInTheDocument();
     expect(screen.getByText(/\/data\/quarantine\/2026-10-31/)).toBeInTheDocument();

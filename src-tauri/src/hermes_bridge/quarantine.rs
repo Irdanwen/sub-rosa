@@ -350,8 +350,9 @@ fn skill_dirs(dir: &Path, relative: &str, depth: usize, out: &mut Vec<String>) {
 pub struct RestoreOutcome {
     /// Back in the home.
     pub restored: Vec<String>,
-    /// Left in the quarantine folder: a link (symbolic or hard) is never put
-    /// back, nor anything whose place in the home is taken.
+    /// Left in the quarantine folder: a link (symbolic or hard), a pipe, a
+    /// socket or a device is never put back, nor anything whose place in the
+    /// home is taken.
     pub refused: Vec<String>,
 }
 
@@ -405,15 +406,17 @@ pub(super) fn restore(hermes_home: &Path, chosen: &[String]) -> std::io::Result<
     Ok(outcome)
 }
 
-/// Whether `path` is, or holds anywhere below it, a symbolic link or a file
-/// with a second name. Never followed.
+/// Whether `path` is, or holds anywhere below it, a symbolic link, a file
+/// with a second name, a pipe, a socket or a device (F3). Never followed.
 fn holds_a_link(path: &Path) -> bool {
     let mut stack = vec![path.to_path_buf()];
     while let Some(next) = stack.pop() {
         let Ok(meta) = next.symlink_metadata() else {
             return true;
         };
-        if meta.file_type().is_symlink() || (meta.is_file() && super::home_prep::hard_linked(&meta))
+        if meta.file_type().is_symlink()
+            || (meta.is_file() && super::home_prep::hard_linked(&meta))
+            || super::home_prep::special(&meta)
         {
             return true;
         }
@@ -847,6 +850,31 @@ mod tests {
         assert!(back.restored.is_empty(), "{back:?}");
         assert_eq!(back.refused.len(), 3);
         assert!(home.join("scripts").symlink_metadata().is_err());
+    }
+
+    /// ADR-0140 (F3): a pipe or a socket set aside is never put back.
+    #[cfg(unix)]
+    #[test]
+    fn a_pipe_or_a_socket_is_never_put_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("hermes");
+        std::fs::create_dir_all(home.join("hooks/h")).unwrap();
+        assert!(std::process::Command::new("mkfifo")
+            .arg(home.join("hooks/h/pipe"))
+            .status()
+            .unwrap()
+            .success());
+        std::fs::create_dir_all(home.join("scripts")).unwrap();
+        let _socket = std::os::unix::net::UnixListener::bind(home.join("scripts/s.sock")).unwrap();
+        plant(&home, "hooks/plain/HOOK.yaml", "name: plain\n");
+        let record = run_once(&home, "2026-11-03").unwrap().unwrap();
+        let back = restore(&home, &record.items).unwrap();
+        assert!(back.refused.contains(&"hooks/h".to_string()), "{back:?}");
+        assert!(
+            back.refused.contains(&"scripts/s.sock".to_string()),
+            "{back:?}"
+        );
+        assert_eq!(back.restored, ["hooks/plain"]);
     }
 
     /// ADR-0140 (D3): the person puts back the items they choose, one by

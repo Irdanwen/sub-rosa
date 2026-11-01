@@ -48,6 +48,10 @@ pub(super) fn build_hermes_mcp_login_command(
             super::jail_reaper::JAIL_MARK_ENV,
             super::jail_reaper::new_mark(),
         );
+        super::sandbox_profile::apply_jail_env(
+            &mut cmd,
+            super::sandbox_profile::prepare_jail_tmp().ok().as_deref(),
+        );
     }
     cmd
 }

@@ -82,13 +82,7 @@ pub(crate) fn recorded(any_home: &Path) -> BTreeMap<String, Owner> {
 /// Records the home a conversation was created or resumed in. A routine's
 /// run is never recorded as the jail's.
 pub(crate) fn record(any_home: &Path, session_id: &str, owner: Owner) -> Result<(), AppError> {
-    let session_id = session_id.trim();
-    if session_id.is_empty() {
-        return Err(AppError::new(
-            "hermes_session_id_required",
-            "Hermes session ID is required.",
-        ));
-    }
+    let session_id = valid_session_id(session_id)?;
     if is_routine_run(session_id) && owner == Owner::Sandboxed {
         return Ok(());
     }
@@ -105,6 +99,25 @@ pub(crate) fn record(any_home: &Path, session_id: &str, owner: Owner) -> Result<
     std::fs::write(&temp, text)
         .and_then(|()| std::fs::rename(&temp, &path))
         .map_err(|error| AppError::new("hermes_session_home_failed", error.to_string()))
+}
+
+/// A session identifier as the record keeps it: the exact text, checked
+/// once (review 4): not empty, no surrounding space, no control character,
+/// at most 256 bytes. One that would need trimming is refused, so the
+/// value checked against the snapshot and the shared database is the one
+/// recorded.
+pub(crate) fn valid_session_id(session_id: &str) -> Result<&str, AppError> {
+    if session_id.is_empty()
+        || session_id.trim() != session_id
+        || session_id.len() > 256
+        || session_id.chars().any(char::is_control)
+    {
+        return Err(AppError::new(
+            "hermes_session_id_required",
+            "Hermes session ID is required.",
+        ));
+    }
+    Ok(session_id)
 }
 
 /// A routine's run: always the shared home's, where the gateway runs it.
@@ -218,6 +231,7 @@ pub(crate) async fn record_checked(
     session_id: &str,
     owner: Owner,
 ) -> Result<Owner, AppError> {
+    let session_id = valid_session_id(session_id)?;
     let owner = if owner == Owner::Sandboxed
         && !split_snapshot(any_home).contains(session_id)
         && !in_shared_home(any_home, &[session_id]).await.is_empty()
@@ -406,6 +420,30 @@ mod tests {
             Owner::Sandboxed
         );
         assert_eq!(recorded(&shared).get("unrestricted"), Some(&Owner::Shared));
+    }
+
+    /// Review 4 (3): one identifier, checked once: one that would need
+    /// trimming is refused, never recorded under another form.
+    #[tokio::test]
+    async fn a_session_identifier_is_taken_exactly_or_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join(SHARED_HOME);
+        shared_db_with(&shared, &["s1"]).await;
+        for bad in [" s1", "s1 ", "", "a\nb", &"x".repeat(300)] {
+            assert!(
+                record_checked(&shared, bad, Owner::Sandboxed)
+                    .await
+                    .is_err(),
+                "{bad:?}"
+            );
+        }
+        assert!(recorded(&shared).is_empty());
+        assert_eq!(
+            record_checked(&shared, "s1", Owner::Sandboxed)
+                .await
+                .unwrap(),
+            Owner::Shared
+        );
     }
 
     /// ADR-0140 (review 2): a shared database that cannot be read keeps

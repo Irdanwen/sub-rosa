@@ -240,7 +240,7 @@ export function AgentSettingsSection() {
               <h3 className="settings-row-title">{t("In a sandboxed session")}</h3>
               <p className="settings-row-description">
                 {t(
-                  "The assistant works in a folder of its own there and cannot change its own setup: it does not save memories of its own, create its own routines or skills, or install tools by itself, and the command checker it would download stays off. Routines, messaging channels and task boards run on the unrestricted side. Sub Rosa still remembers what matters through its own memory, and you change skills, connectors, tools and routines here, in Settings.",
+                  "The assistant works in a folder of its own there and cannot change its own setup: it does not save memories of its own, create its own routines or skills, or install tools by itself, and the command checker it would download stays off. Routines, messaging channels and task boards run on the unrestricted side. Nor can it open links, files or apps on your screen, use the clipboard, show notifications or take screenshots: it gives you the link or the path instead. Sub Rosa still remembers what matters through its own memory, and you change skills, connectors, tools and routines here, in Settings.",
                 )}
               </p>
             </div>

@@ -59,6 +59,8 @@ impl RealJail {
         home_prep::prepare(&home).unwrap();
         let person = PathBuf::from(std::env::var_os("HOME").unwrap());
         let temp = sandbox_temp_roots();
+        // The jail's own temp folder, as the app gives it (M1).
+        let jail_tmp = super::sandbox_profile::prepare_jail_tmp().unwrap();
         let profile_text = build_sandbox_profile(&SandboxGrants {
             home: &person,
             hermes_home: &home,
@@ -68,6 +70,7 @@ impl RealJail {
             agent_cli_access: false,
             working_dir: None,
             result_dir: None,
+            jail_tmp: Some(&jail_tmp),
         });
         let profile = root.join("hermes-sandbox.sb");
         std::fs::write(&profile, profile_text).unwrap();
@@ -274,7 +277,13 @@ fn the_runtime_lives_with_its_home_read_only() {
     let script =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/jail-eval/runtime_lives.py");
     let out = jail.dir.path().join("report.json");
-    let status = Command::new(jail.python())
+    let mut runner = Command::new(jail.python());
+    // The environment the app gives a jailed runtime (M1).
+    super::sandbox_profile::apply_jail_env(
+        &mut runner,
+        super::sandbox_profile::prepare_jail_tmp().ok().as_deref(),
+    );
+    let status = runner
         .arg(&script)
         .arg("--hermes")
         .arg(jail.hermes())
@@ -485,6 +494,7 @@ fn the_jailed_reader_reads_the_sandboxed_home() {
             agent_cli_access: false,
             working_dir: None,
             result_dir: Some(&results),
+            jail_tmp: None,
         }),
     )
     .unwrap();

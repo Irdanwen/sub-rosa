@@ -45,8 +45,16 @@ pub(super) fn config_block(memory_off: bool) -> String {
 /// Writes the plugin under `$HERMES_HOME/plugins/`. Rewritten at every
 /// runtime start, so an app update carries its guard with it.
 pub(super) fn install_plugin(hermes_home: &Path) -> std::io::Result<()> {
-    let dir = hermes_home.join("plugins").join(PLUGIN_NAME);
-    // A link in place of the folder (planted before ADR-0140) goes first.
+    // A link in place of `plugins` or of the plugin's folder (planted before
+    // ADR-0140) goes first: nothing is written through it.
+    let plugins = hermes_home.join("plugins");
+    if plugins
+        .symlink_metadata()
+        .is_ok_and(|meta| meta.file_type().is_symlink() || !meta.is_dir())
+    {
+        std::fs::remove_file(&plugins)?;
+    }
+    let dir = plugins.join(PLUGIN_NAME);
     if dir
         .symlink_metadata()
         .is_ok_and(|meta| meta.file_type().is_symlink() || !meta.is_dir())
@@ -522,5 +530,32 @@ mod tests {
             .lines()
             .map(str::to_string)
             .collect()
+    }
+}
+
+#[cfg(test)]
+#[cfg(unix)]
+mod plugin_tests {
+    use super::*;
+
+    /// Review 4: a link in place of `plugins` is replaced by a real folder;
+    /// the plugin is never written where it points.
+    #[test]
+    fn the_plugin_is_never_written_through_a_linked_plugins_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("hermes");
+        let elsewhere = dir.path().join("elsewhere");
+        std::fs::create_dir_all(elsewhere.join(PLUGIN_NAME)).unwrap();
+        std::fs::create_dir_all(&home).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, home.join("plugins")).unwrap();
+        install_plugin(&home).unwrap();
+        let plugins = home.join("plugins").symlink_metadata().unwrap();
+        assert!(plugins.is_dir() && !plugins.file_type().is_symlink());
+        assert!(home
+            .join("plugins")
+            .join(PLUGIN_NAME)
+            .join("plugin.yaml")
+            .is_file());
+        assert!(!elsewhere.join(PLUGIN_NAME).join("plugin.yaml").exists());
     }
 }

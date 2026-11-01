@@ -106,6 +106,10 @@ pub(super) struct SandboxGrants<'a> {
     /// folder of the app's data only that reader may write (ADR-0140, D5),
     /// never the temp folder the runtime shares.
     pub result_dir: Option<&'a Path>,
+    /// The jail's own temp folder (its `TMPDIR`): the one place outside its
+    /// home and working folder where it may reach a unix socket (ADR-0140,
+    /// M1).
+    pub jail_tmp: Option<&'a Path>,
 }
 
 /// The temp folders the jail may write. Canonicalized (macOS resolves
@@ -349,6 +353,15 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
         out.push_str(&format!("  (global-name {})\n", sbpl_quote(name)));
     }
     out.push_str(")\n");
+    push_unix_socket_rules(&mut out, grants);
+    // ADR-0140 (M2): launchd answers `kickstart`, `kill`, `bootout` and
+    // `disable` from a sandboxed process (they go over the bootstrap port,
+    // which no rule filters); its command-line client is refused. A copy of
+    // it is killed by the system for leaving its signed place.
+    out.push_str(
+        ";; The launchd client: no job of the person's is started, stopped or disabled.\n",
+    );
+    out.push_str("(deny process-exec (literal \"/bin/launchctl\"))\n");
     out.push_str(";; Preferences are written by a daemon outside the jail and read by\n");
     out.push_str(";; every program that later starts: none from here.\n");
     out.push_str("(deny user-preference-write)\n\n");
@@ -524,6 +537,7 @@ fn write_profile(
     // `hermes_working_dir::validate_working_dir` (the spawn re-validates on
     // every start): the "explicit, validated grant" that lets the jail span
     // one user-picked folder without ever widening past it.
+    let jail_tmp = prepare_jail_tmp().ok();
     let profile = build_sandbox_profile(&SandboxGrants {
         home: &home,
         hermes_home: &hermes_home,
@@ -533,6 +547,7 @@ fn write_profile(
         agent_cli_access,
         working_dir,
         result_dir,
+        jail_tmp: jail_tmp.as_deref(),
     });
     let app_data_dir = crate::app_paths::app_data_dir(app).ok()?;
     if std::fs::create_dir_all(&app_data_dir).is_err() {
@@ -559,6 +574,106 @@ fn write_profile(
 ) -> Option<std::path::PathBuf> {
     None
 }
+
+/// The unix sockets the jail may connect to (ADR-0140, M1): its own temp
+/// folder, its home, its working folder, name resolution and the system
+/// log. Not an agent's (ssh, gpg), a container engine's (Docker, Colima,
+/// OrbStack), a terminal multiplexer's or an editor server's, each of which
+/// would run or sign something outside the jail. Measured: Python, Node,
+/// git and curl over HTTPS, and the runtime's own session, work under it.
+#[cfg(target_os = "macos")]
+fn push_unix_socket_rules(out: &mut String, grants: &SandboxGrants<'_>) {
+    out.push_str(";; Unix sockets: the jail's own, name resolution and the system log.\n");
+    out.push_str("(deny network-outbound (remote unix-socket))\n");
+    out.push_str("(allow network-outbound\n");
+    let mut roots: Vec<&Path> = vec![grants.hermes_home];
+    roots.extend(grants.jail_tmp);
+    roots.extend(grants.working_dir);
+    for root in roots {
+        out.push_str(&format!(
+            "  (remote unix-socket (subpath {}))\n",
+            sbpl_quote(&root.to_string_lossy())
+        ));
+    }
+    for system in ALLOWED_UNIX_SOCKETS {
+        out.push_str(&format!(
+            "  (remote unix-socket (path-literal {}))\n",
+            sbpl_quote(system)
+        ));
+    }
+    out.push_str(")\n");
+    // Whatever a grant above spans: never a credential store's socket (the
+    // gpg agent's, Docker's), launchd's per-user listeners (the ssh agent),
+    // or a container engine's.
+    out.push_str("(deny network-outbound\n");
+    for relative in crate::hermes_working_dir::SECRET_STORE_DIRS
+        .iter()
+        .chain(CONTAINER_SOCKET_DIRS)
+    {
+        out.push_str(&format!(
+            "  (remote unix-socket (subpath {}))\n",
+            sbpl_quote(&grants.home.join(relative).to_string_lossy())
+        ));
+    }
+    out.push_str("  (remote unix-socket (path-regex #\"^/private/var/run/com\\.apple\\.launchd\\.[^/]+/\"))\n");
+    out.push_str("  (remote unix-socket (path-literal \"/private/var/run/docker.sock\"))\n");
+    out.push_str(")\n\n");
+}
+
+/// The system sockets the jail may reach: name resolution (`getaddrinfo`
+/// fails without it) and the system log.
+#[cfg(target_os = "macos")]
+const ALLOWED_UNIX_SOCKETS: &[&str] =
+    &["/private/var/run/mDNSResponder", "/private/var/run/syslog"];
+
+/// Where container engines keep their socket, relative to the person's home.
+#[cfg(target_os = "macos")]
+const CONTAINER_SOCKET_DIRS: &[&str] = &[
+    ".colima",
+    ".orbstack",
+    ".rd",
+    ".lima",
+    "Library/Containers/com.docker.docker",
+];
+
+/// The jail's own temp folder, inside the app's: given to the runtime as its
+/// `TMPDIR`. Made fresh by the app (a link or a file in its place is
+/// removed), private to the account.
+pub(super) fn prepare_jail_tmp() -> std::io::Result<std::path::PathBuf> {
+    let base = std::env::temp_dir();
+    let base = std::fs::canonicalize(&base).unwrap_or(base);
+    let dir = base.join("subrosa-jail");
+    if let Ok(meta) = dir.symlink_metadata() {
+        if !meta.is_dir() || meta.file_type().is_symlink() {
+            std::fs::remove_file(&dir)?;
+        }
+    }
+    create_private_dir(&dir)?;
+    Ok(dir)
+}
+
+/// What a jailed process must not inherit from the app's environment: the
+/// way to the person's agents and engines (ADR-0140, M1). And its own temp
+/// folder.
+pub(super) fn apply_jail_env(cmd: &mut std::process::Command, jail_tmp: Option<&std::path::Path>) {
+    for name in INHERITED_SOCKET_VARS {
+        cmd.env_remove(name);
+    }
+    if let Some(dir) = jail_tmp {
+        cmd.env("TMPDIR", dir);
+    }
+}
+
+/// The variables that point at an agent's or an engine's socket.
+pub(super) const INHERITED_SOCKET_VARS: &[&str] = &[
+    "SSH_AUTH_SOCK",
+    "SSH_AGENT_PID",
+    "GPG_AGENT_INFO",
+    "DOCKER_HOST",
+    "TMUX",
+    "TMUX_PANE",
+    "STY",
+];
 
 /// Every folder above `paths`, up to the root, once each.
 #[cfg(target_os = "macos")]

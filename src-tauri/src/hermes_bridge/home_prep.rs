@@ -134,14 +134,19 @@ pub(super) fn write_owned(path: &Path, contents: &str) -> std::io::Result<()> {
     let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
         return Err(std::io::Error::other("no file name"));
     };
-    if dir
-        .symlink_metadata()
-        .is_ok_and(|meta| meta.file_type().is_symlink())
-    {
-        return Err(std::io::Error::other(format!(
-            "{} is a link; nothing is written through it",
-            dir.display()
-        )));
+    // Every folder from the home down to the file, the home included, is a
+    // real folder (review 4): a link anywhere on the way would carry the
+    // write elsewhere.
+    for folder in folders_from_home(dir) {
+        if folder
+            .symlink_metadata()
+            .is_ok_and(|meta| meta.file_type().is_symlink())
+        {
+            return Err(std::io::Error::other(format!(
+                "{} is a link; nothing is written through it",
+                folder.display()
+            )));
+        }
     }
     if let Ok(meta) = path.symlink_metadata() {
         if meta.is_dir() {
@@ -176,6 +181,23 @@ pub(super) fn write_owned(path: &Path, contents: &str) -> std::io::Result<()> {
         let _ = std::fs::remove_file(&temp);
     }
     renamed
+}
+
+/// `dir` and every folder above it up to the runtime home it sits in (the
+/// nearest named like a home), or `dir` alone outside any home.
+fn folders_from_home(dir: &Path) -> Vec<&Path> {
+    let mut folders = Vec::new();
+    for folder in dir.ancestors() {
+        folders.push(folder);
+        let name = folder.file_name().and_then(|name| name.to_str());
+        if matches!(
+            name,
+            Some(super::home_split::SHARED_HOME | super::home_split::SANDBOXED_HOME)
+        ) {
+            return folders;
+        }
+    }
+    vec![dir]
 }
 
 /// Removes the sticky profile from the home before the gateway starts; the
@@ -284,14 +306,14 @@ fn sweep_links(hermes_home: &Path) {
 /// A pipe, a socket or a device: something that would hang or answer an
 /// open by name instead of holding data.
 #[cfg(unix)]
-fn special(meta: &std::fs::Metadata) -> bool {
+pub(super) fn special(meta: &std::fs::Metadata) -> bool {
     use std::os::unix::fs::FileTypeExt as _;
     let kind = meta.file_type();
     kind.is_fifo() || kind.is_socket() || kind.is_char_device() || kind.is_block_device()
 }
 
 #[cfg(not(unix))]
-fn special(_meta: &std::fs::Metadata) -> bool {
+pub(super) fn special(_meta: &std::fs::Metadata) -> bool {
     false
 }
 
@@ -353,6 +375,11 @@ mod tests {
         std::os::unix::fs::symlink(&elsewhere, home.join("hooks")).unwrap();
         assert!(write_owned(&home.join("hooks/x.yaml"), "x").is_err());
         assert!(!elsewhere.join("x.yaml").exists());
+        // Review 4: a link higher on the way is refused too.
+        std::fs::create_dir_all(elsewhere.join("deep")).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, home.join("plugins")).unwrap();
+        assert!(write_owned(&home.join("plugins/deep/plugin.yaml"), "x").is_err());
+        assert!(!elsewhere.join("deep/plugin.yaml").exists());
         // No temporary file is left behind.
         let left: Vec<_> = std::fs::read_dir(home.join("cron"))
             .unwrap()

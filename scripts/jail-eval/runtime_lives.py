@@ -52,6 +52,9 @@ SCRIPT = [
     # (read only, free), file watching, and what it refuses.
     ("write_file", {"path": "tls_probe.py", "content": "import urllib.request\nprint('TLS-' + str(urllib.request.urlopen('https://example.com', timeout=20).status))\n"}, "ok"),
     ("terminal", {"command": "/usr/bin/python3 tls_probe.py"}, "contains:TLS-200"),
+    # A unix socket of its own, in its own temp folder (ADR-0140, M1).
+    ("write_file", {"path": "mp_probe.py", "content": "import multiprocessing as mp\nif __name__ == '__main__':\n    with mp.Manager() as m:\n        d = m.dict(a=1)\n        print('MP-' + str(d['a']))\n"}, "ok"),
+    ("terminal", {"command": "/usr/bin/python3 mp_probe.py"}, "contains:MP-1"),
     ("terminal", {"command": "curl -s -o /dev/null -w 'CURL-%{http_code}' https://example.com"}, "contains:CURL-200"),
     ("terminal", {"command": "if command -v node >/dev/null; then node -e \"const fs=require('fs');fs.watch('.',()=>{console.log('WATCH-OK');process.exit(0)});let i=0;setInterval(()=>fs.writeFileSync('w'+(i++)+'.tmp','x'),300);setTimeout(()=>process.exit(1),8000)\"; else echo WATCH-OK-NO-NODE; fi"}, "contains:WATCH-OK"),
     ("terminal", {"command": "/usr/bin/open https://example.com; echo OPEN-RC=$?"}, "contains:OPEN-RC=1"),
