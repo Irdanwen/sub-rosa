@@ -152,35 +152,82 @@ pub(crate) async fn owner_of(any_home: &Path, session_id: &str) -> Owner {
         .unwrap_or(Owner::Shared)
 }
 
-/// Which of `ids` the shared home's database has. Unreadable is none.
+/// Which of `ids` the shared home's database has. It fails closed: a
+/// database that exists but cannot be read answers that it has them all,
+/// so the shared home stays their owner (ADR-0140, review 2).
 pub(crate) async fn in_shared_home(any_home: &Path, ids: &[&str]) -> HashSet<String> {
-    let mut found = HashSet::new();
-    let path = shared_home(any_home).join("state.db");
-    if ids.is_empty() || !path.is_file() {
-        return found;
-    }
-    let Ok(mut connection) =
-        <sqlx_sqlite::SqliteConnection as sqlx::connection::Connection>::connect_with(
-            &hardened_read_options(&path),
-        )
-        .await
-    else {
-        return found;
+    let all = || {
+        ids.iter()
+            .map(|id| (*id).to_string())
+            .collect::<HashSet<_>>()
     };
+    let path = shared_home(any_home).join("state.db");
+    if ids.is_empty() || path.symlink_metadata().is_err() {
+        return HashSet::new();
+    }
+    let Ok(mut connection) = open_hardened(&path).await else {
+        return all();
+    };
+    let mut found = HashSet::new();
     for id in ids {
-        let present: Option<(i64,)> =
+        let present: Result<Option<(i64,)>, _> =
             sqlx::query_as::query_as("SELECT 1 FROM sessions WHERE id = ? LIMIT 1")
                 .bind(*id)
                 .fetch_optional(&mut connection)
-                .await
-                .ok()
-                .flatten();
-        if present.is_some() {
-            found.insert((*id).to_string());
+                .await;
+        match present {
+            Ok(Some(_)) => {
+                found.insert((*id).to_string());
+            }
+            Ok(None) => {}
+            Err(_) => return all(),
         }
     }
     let _ = sqlx::connection::Connection::close(connection).await;
     found
+}
+
+/// The conversations copied from the shared home at the split, beside both
+/// homes, written by the app alone.
+const SPLIT_SNAPSHOT_FILE: &str = "hermes-split-sessions.json";
+
+/// Keeps the identifiers of the conversations copied at the split.
+pub(crate) fn save_split_snapshot(any_home: &Path, ids: &[String]) -> std::io::Result<()> {
+    let path = record_path(any_home).with_file_name(SPLIT_SNAPSHOT_FILE);
+    let temp = path.with_extension("json.tmp");
+    std::fs::write(&temp, serde_json::to_vec(ids).unwrap_or_default())?;
+    std::fs::rename(&temp, &path)
+}
+
+fn split_snapshot(any_home: &Path) -> HashSet<String> {
+    std::fs::read(record_path(any_home).with_file_name(SPLIT_SNAPSHOT_FILE))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Vec<String>>(&bytes).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .collect()
+}
+
+/// Records where a conversation was created or resumed, as the app is told
+/// by the webview. A conversation the shared home's database has goes to
+/// the sandboxed home only when it was copied there at the split: a resume
+/// that worked on the sandboxed runtime proves nothing for one the jail
+/// could have written under the same identifier (ADR-0140, review 1).
+pub(crate) async fn record_checked(
+    any_home: &Path,
+    session_id: &str,
+    owner: Owner,
+) -> Result<Owner, AppError> {
+    let owner = if owner == Owner::Sandboxed
+        && !split_snapshot(any_home).contains(session_id)
+        && !in_shared_home(any_home, &[session_id]).await.is_empty()
+    {
+        Owner::Shared
+    } else {
+        owner
+    };
+    record(any_home, session_id, owner)?;
+    Ok(owner)
 }
 
 /// How the app opens a runtime's database in its own process (ADR-0140):
@@ -198,6 +245,58 @@ pub(crate) fn hardened_read_options(path: &Path) -> sqlx_sqlite::SqliteConnectOp
         .pragma("query_only", "ON")
 }
 
+/// Turns SQLite's defensive mode on for `connection` (ADR-0140, D5): no
+/// write to the schema or to a shadow table, whatever the file holds.
+pub(crate) async fn harden(
+    connection: &mut sqlx_sqlite::SqliteConnection,
+) -> Result<(), sqlx::Error> {
+    let mut handle = connection.lock_handle().await?;
+    let raw = handle.as_raw_handle().as_ptr();
+    // SAFETY: a live handle, locked for the call; the option takes an int
+    // and an optional out pointer.
+    let code = unsafe {
+        libsqlite3_sys::sqlite3_db_config(
+            raw,
+            libsqlite3_sys::SQLITE_DBCONFIG_DEFENSIVE,
+            1 as std::ffi::c_int,
+            std::ptr::null_mut::<std::ffi::c_int>(),
+        )
+    };
+    if code == libsqlite3_sys::SQLITE_OK {
+        Ok(())
+    } else {
+        Err(sqlx::Error::Protocol(format!(
+            "defensive mode refused ({code})"
+        )))
+    }
+}
+
+/// A connection to a runtime's database as the app opens one in its own
+/// process: [`hardened_read_options`] and defensive mode.
+pub(crate) async fn open_hardened(
+    path: &Path,
+) -> Result<sqlx_sqlite::SqliteConnection, sqlx::Error> {
+    let mut connection =
+        <sqlx_sqlite::SqliteConnection as sqlx::connection::Connection>::connect_with(
+            &hardened_read_options(path),
+        )
+        .await?;
+    harden(&mut connection).await?;
+    Ok(connection)
+}
+
+/// A pool on a runtime's database, each connection hardened.
+pub(crate) async fn hardened_pool(
+    path: &Path,
+    max_connections: u32,
+) -> Result<sqlx_sqlite::SqlitePool, sqlx::Error> {
+    sqlx_sqlite::SqlitePoolOptions::new()
+        .max_connections(max_connections)
+        .after_connect(|connection, _| Box::pin(async move { harden(connection).await }))
+        .connect_with(hardened_read_options(path))
+        .await
+}
+
 /// Records the home a conversation was created or resumed in, from the
 /// mode of the runtime that did it (ADR-0140).
 #[tauri::command]
@@ -206,11 +305,13 @@ pub async fn hermes_record_session_home(
     request: RecordSessionHomeRequest,
 ) -> Result<(), AppError> {
     let home = super::resolve_june_hermes_home(&app)?;
-    record(
+    record_checked(
         &home,
         &request.session_id,
         Owner::of_mode(request.unrestricted),
     )
+    .await
+    .map(|_| ())
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -255,6 +356,83 @@ mod tests {
         assert!(dir.path().join(RECORD_FILE).is_file());
     }
 
+    async fn shared_db_with(shared: &Path, ids: &[&str]) {
+        std::fs::create_dir_all(shared).unwrap();
+        let options = sqlx_sqlite::SqliteConnectOptions::new()
+            .filename(shared.join("state.db"))
+            .create_if_missing(true);
+        let mut db =
+            <sqlx_sqlite::SqliteConnection as sqlx::connection::Connection>::connect_with(&options)
+                .await
+                .unwrap();
+        sqlx::query::query("CREATE TABLE sessions (id TEXT PRIMARY KEY)")
+            .execute(&mut db)
+            .await
+            .unwrap();
+        for id in ids {
+            sqlx::query::query("INSERT INTO sessions VALUES (?)")
+                .bind(*id)
+                .execute(&mut db)
+                .await
+                .unwrap();
+        }
+    }
+
+    /// ADR-0140 (review 1): a resume on the sandboxed runtime moves to the
+    /// jail's home only a conversation the shared home does not have, or one
+    /// copied at the split.
+    #[tokio::test]
+    async fn a_sandboxed_resume_never_takes_a_conversation_of_the_shared_home() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join(SHARED_HOME);
+        shared_db_with(&shared, &["unrestricted", "before-split"]).await;
+        save_split_snapshot(&shared, &["before-split".to_string()]).unwrap();
+        assert_eq!(
+            record_checked(&shared, "unrestricted", Owner::Sandboxed)
+                .await
+                .unwrap(),
+            Owner::Shared
+        );
+        assert_eq!(
+            record_checked(&shared, "before-split", Owner::Sandboxed)
+                .await
+                .unwrap(),
+            Owner::Sandboxed
+        );
+        assert_eq!(
+            record_checked(&shared, "new", Owner::Sandboxed)
+                .await
+                .unwrap(),
+            Owner::Sandboxed
+        );
+        assert_eq!(recorded(&shared).get("unrestricted"), Some(&Owner::Shared));
+    }
+
+    /// ADR-0140 (review 2): a shared database that cannot be read keeps
+    /// everything on the shared side.
+    #[tokio::test]
+    async fn an_unreadable_shared_database_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join(SHARED_HOME);
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::write(shared.join("state.db"), "not a database").unwrap();
+        assert_eq!(owner_of(&shared, "any").await, Owner::Shared);
+        assert_eq!(
+            record_checked(&shared, "any", Owner::Sandboxed)
+                .await
+                .unwrap(),
+            Owner::Shared
+        );
+        // A database that cannot even be opened (here, a folder).
+        let folder = dir.path().join("third").join(SHARED_HOME);
+        std::fs::create_dir_all(folder.join("state.db")).unwrap();
+        assert_eq!(owner_of(&folder, "any").await, Owner::Shared);
+        // No database at all (a new installation): nothing is there.
+        let fresh = dir.path().join("other").join(SHARED_HOME);
+        std::fs::create_dir_all(&fresh).unwrap();
+        assert_eq!(owner_of(&fresh, "any").await, Owner::Sandboxed);
+    }
+
     #[tokio::test]
     async fn the_shared_database_is_read_with_its_schema_distrusted() {
         let dir = tempfile::tempdir().unwrap();
@@ -295,6 +473,20 @@ mod tests {
             .await
             .unwrap();
         assert_eq!((trusted, checked), (0, 1));
+        let mut defended = open_hardened(&shared.join("state.db")).await.unwrap();
+        let mut handle = defended.lock_handle().await.unwrap();
+        let mut on: std::ffi::c_int = -1;
+        // SAFETY: reads the option back into `on`.
+        unsafe {
+            libsqlite3_sys::sqlite3_db_config(
+                handle.as_raw_handle().as_ptr(),
+                libsqlite3_sys::SQLITE_DBCONFIG_DEFENSIVE,
+                -1 as std::ffi::c_int,
+                &mut on as *mut std::ffi::c_int,
+            );
+        }
+        assert_eq!(on, 1, "defensive mode is off");
+        drop(handle);
         assert!(sqlx::query::query("DELETE FROM sessions")
             .execute(&mut hardened)
             .await

@@ -102,6 +102,10 @@ pub(super) struct SandboxGrants<'a> {
     pub agent_cli_access: bool,
     /// The session's working folder, already validated (ADR-0014).
     pub working_dir: Option<&'a Path>,
+    /// Where a one-off reader of the sandboxed home writes its answer: a
+    /// folder of the app's data only that reader may write (ADR-0140, D5),
+    /// never the temp folder the runtime shares.
+    pub result_dir: Option<&'a Path>,
 }
 
 /// The temp folders the jail may write. Canonicalized (macOS resolves
@@ -161,6 +165,14 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
         ));
     }
     out.push_str(")\n\n");
+
+    if let Some(result_dir) = grants.result_dir {
+        out.push_str(";; The one-off reader's answer, nothing else of the app's data.\n");
+        out.push_str(&format!(
+            "(allow file-write* (subpath {}))\n\n",
+            sbpl_quote(&result_dir.to_string_lossy())
+        ));
+    }
 
     if let Some(working_dir) = grants.working_dir {
         // The one user-directory grant, and it exists only because
@@ -327,17 +339,14 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
     out.push_str("(deny signal (target others))\n");
     out.push_str("(allow signal (target same-sandbox))\n\n");
 
-    // ADR-0140: no system service that starts, drives or configures a
-    // program outside the jail on the jail's behalf.
-    out.push_str(";; Services that launch or drive programs outside the jail.\n");
-    out.push_str("(deny mach-lookup\n");
-    for (name, prefix) in REFUSED_MACH_SERVICES {
-        let filter = if *prefix {
-            "global-name-prefix"
-        } else {
-            "global-name"
-        };
-        out.push_str(&format!("  ({filter} {})\n", sbpl_quote(name)));
+    // ADR-0140: the jail reaches only the system services it was measured
+    // to need. None of them starts, drives or configures a program outside
+    // it, sees the screen or posts an event.
+    out.push_str(";; System services: the measured list only.\n");
+    out.push_str("(deny mach-lookup)\n");
+    out.push_str("(allow mach-lookup\n");
+    for name in ALLOWED_MACH_SERVICES {
+        out.push_str(&format!("  (global-name {})\n", sbpl_quote(name)));
     }
     out.push_str(")\n");
     out.push_str(";; Preferences are written by a daemon outside the jail and read by\n");
@@ -363,41 +372,36 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
     out
 }
 
-/// The system services the jail may not reach (ADR-0140), `true` for a
-/// name prefix. Each one would start, drive or configure a program outside
-/// the jail, which then runs with none of its limits. Measured on macOS 26:
+/// The only system services the jail may reach (ADR-0140): an allowlist
+/// over `(deny mach-lookup)`. Measured on macOS 26 by removing each name in
+/// turn under Python (users and groups, name resolution, subprocesses, TLS
+/// with its own certificates), Node (child processes, TLS, file watching),
+/// git and curl over HTTPS, a Go binary's TLS (the system trust store),
+/// `defaults read`, and the pinned runtime's own session with every tool
+/// (`scripts/jail-eval/runtime_lives.py`); a name stays only when its
+/// removal broke one of them.
 ///
-/// - `com.apple.coreservices.` and `com.apple.lsd.`: LaunchServices
-///   (`open`, `NSWorkspace`, URL and file handlers, the handler database)
-///   and Apple events (`osascript` driving Finder, Terminal, System Events).
-/// - `com.apple.siri`, `com.apple.WorkflowKit.`, `com.apple.shortcuts`,
-///   `com.apple.linkd.`, `com.apple.private.alloy.shortcuts`: Shortcuts,
-///   whose `shortcuts run` executes actions (shell scripts among them) in
-///   its own daemon.
-/// - `com.apple.backgroundtaskmanagement` and `com.apple.xpc.smd`: login
-///   items and helper registration, which run at the next login.
-/// - `com.apple.dock.`: the Dock launches applications.
-/// - `com.apple.pbs.` and `com.apple.finder.ServiceProvider`: the Services
-///   menu, which runs a service inside another application.
+/// - `com.apple.system.opendirectoryd.libinfo`: users, groups and name
+///   resolution (`getpwuid`, `getaddrinfo`); without it nothing starts.
+/// - `com.apple.cfprefsd.agent`, `com.apple.cfprefsd.daemon`: reading
+///   preferences (writing them is refused by `user-preference-write`).
+/// - `com.apple.FSEvents`: watching files (Node's `fs.watch`, language
+///   servers); it reports, it never writes.
+/// - `com.apple.trustd.agent`: evaluating a certificate against the system
+///   trust store (Go, Swift and Security-framework TLS).
 ///
-/// `launchctl bootstrap`/`load`/`submit`/`setenv` are refused by launchd to
-/// any sandboxed process, setuid programs (`crontab`, `at`) cannot be
-/// executed under the profile, and the keychain is a file the write jail
-/// already closes; the kernel tests keep each of these honest.
+/// Everything else is refused, among them LaunchServices and Apple events
+/// (`open`, `osascript`), Shortcuts, login items, the Dock, the Services
+/// menu, the window server (no screen capture, no synthesized key or mouse
+/// event), the TCC daemon (every privacy preflight answers no), the
+/// pasteboard and the keychain daemon.
 #[cfg(target_os = "macos")]
-pub(super) const REFUSED_MACH_SERVICES: &[(&str, bool)] = &[
-    ("com.apple.coreservices.", true),
-    ("com.apple.lsd.", true),
-    ("com.apple.siri", true),
-    ("com.apple.WorkflowKit.", true),
-    ("com.apple.shortcuts", true),
-    ("com.apple.linkd.", true),
-    ("com.apple.private.alloy.shortcuts", true),
-    ("com.apple.backgroundtaskmanagement", true),
-    ("com.apple.xpc.smd", false),
-    ("com.apple.dock.", true),
-    ("com.apple.pbs.", true),
-    ("com.apple.finder.ServiceProvider", false),
+pub(super) const ALLOWED_MACH_SERVICES: &[&str] = &[
+    "com.apple.system.opendirectoryd.libinfo",
+    "com.apple.cfprefsd.agent",
+    "com.apple.cfprefsd.daemon",
+    "com.apple.FSEvents",
+    "com.apple.trustd.agent",
 ];
 
 /// The profile file of the runtime, and of the one-off reader of its home,
@@ -426,6 +430,7 @@ pub(super) fn prepare(
         hermes_home,
         agent_cli_access,
         working_dir,
+        None,
         RUNTIME_PROFILE_FILE,
     )
 }
@@ -439,7 +444,39 @@ pub(super) fn prepare_reader(app: &tauri::AppHandle, any_home: &std::path::Path)
     if std::fs::create_dir_all(&sandboxed).is_err() {
         return;
     }
-    let _ = write_profile(app, &sandboxed, false, None, READER_PROFILE_FILE);
+    let results = reader_result_dir(any_home);
+    if create_private_dir(&results).is_err() {
+        return;
+    }
+    let results = std::fs::canonicalize(&results).unwrap_or(results);
+    let _ = write_profile(
+        app,
+        &sandboxed,
+        false,
+        None,
+        Some(&results),
+        READER_PROFILE_FILE,
+    );
+}
+
+/// Where the one-off reader of the sandboxed home writes its answers, in
+/// the app's data folder.
+pub(super) fn reader_result_dir(any_home: &std::path::Path) -> std::path::PathBuf {
+    any_home
+        .parent()
+        .unwrap_or(any_home)
+        .join("hermes-reader-results")
+}
+
+/// A folder only this account may open.
+pub(super) fn create_private_dir(dir: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
 }
 
 /// Whether sandboxed processes on this machine run under the jail: then a
@@ -462,6 +499,7 @@ fn write_profile(
     hermes_home: &Path,
     agent_cli_access: bool,
     working_dir: Option<&Path>,
+    result_dir: Option<&Path>,
     file_name: &str,
 ) -> Option<PathBuf> {
     // The caller logs the sandboxed/unsandboxed outcome; this only short-circuits.
@@ -494,6 +532,7 @@ fn write_profile(
         temp_roots: &temp_roots,
         agent_cli_access,
         working_dir,
+        result_dir,
     });
     let app_data_dir = crate::app_paths::app_data_dir(app).ok()?;
     if std::fs::create_dir_all(&app_data_dir).is_err() {
@@ -515,6 +554,7 @@ fn write_profile(
     _hermes_home: &std::path::Path,
     _agent_cli_access: bool,
     _working_dir: Option<&std::path::Path>,
+    _result_dir: Option<&std::path::Path>,
     _file_name: &str,
 ) -> Option<std::path::PathBuf> {
     None

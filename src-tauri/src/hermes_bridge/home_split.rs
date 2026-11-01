@@ -129,6 +129,15 @@ async fn copy_once(sandboxed: &Path) -> Result<bool, AppError> {
             .execute(&mut connection)
             .await
             .map_err(|error| AppError::new("hermes_home_migration_failed", error.to_string()))?;
+        // Which conversations were copied: only those may later move to the
+        // jail's home (`session_owner::record_checked`).
+        let ids: Vec<(String,)> = sqlx::query_as::query_as("SELECT id FROM sessions")
+            .fetch_all(&mut connection)
+            .await
+            .unwrap_or_default();
+        let ids: Vec<String> = ids.into_iter().map(|(id,)| id).collect();
+        session_owner::save_split_snapshot(sandboxed, &ids)
+            .map_err(|error| AppError::new("hermes_home_migration_failed", error.to_string()))?;
         copied = true;
     }
     settings = admin_settings::load(sandboxed);

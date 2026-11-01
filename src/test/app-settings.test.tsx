@@ -41,7 +41,12 @@ const mocks = vi.hoisted(() => ({
     } | null> => null,
   ),
   dismissHermesQuarantineNotice: vi.fn(async () => undefined),
-  restoreHermesQuarantine: vi.fn(async () => 0),
+  restoreHermesQuarantine: vi.fn(
+    async (_items: string[]): Promise<{ restored: string[]; refused: string[] }> => ({
+      restored: [],
+      refused: [],
+    }),
+  ),
   setHermesAgentCliAccess: vi.fn(),
   listDictionaryEntries: vi.fn(),
   createDictionaryEntry: vi.fn(),
@@ -357,7 +362,7 @@ describe("AppSettings", () => {
     mocks.hermesAgentCliAccess.mockResolvedValue({ enabled: false });
     mocks.hermesQuarantineNotice.mockResolvedValue(null);
     mocks.dismissHermesQuarantineNotice.mockResolvedValue(undefined);
-    mocks.restoreHermesQuarantine.mockResolvedValue(0);
+    mocks.restoreHermesQuarantine.mockResolvedValue({ restored: [], refused: [] });
     mocks.setHermesAgentCliAccess.mockImplementation(async (enabled: boolean) => ({ enabled }));
     mocks.setDictationShortcut.mockImplementation(async (kind, shortcut) => ({
       ...baseSettings,
@@ -1815,16 +1820,20 @@ describe("AppSettings", () => {
     expect(screen.queryByText(/3 items were moved/)).toBeNull();
   });
 
-  it("puts back what was set aside when the person asks", async () => {
+  it("puts back only the items the person chose, after saying what will run again", async () => {
     const user = userEvent.setup();
     mocks.hermesQuarantineNotice.mockResolvedValue({
       dir: "/data/quarantine/2026-10-31",
-      items: ["kanban.db", "hooks/x"],
+      items: ["kanban.db", "hooks/x", "scripts"],
       flagged: [],
       redo: ["task_boards"],
     });
-    mocks.restoreHermesQuarantine.mockResolvedValue(2);
+    mocks.restoreHermesQuarantine.mockResolvedValue({
+      restored: ["kanban.db"],
+      refused: ["scripts"],
+    });
     mocks.dismissHermesQuarantineNotice.mockClear();
+    mocks.restoreHermesQuarantine.mockClear();
     render(
       <AppSettings
         sourceMode="microphoneOnly"
@@ -1835,9 +1844,19 @@ describe("AppSettings", () => {
     );
     await user.click(screen.getByRole("tab", { name: "Agent" }));
     expect(await screen.findByText(/Your task boards were set aside/)).toBeInTheDocument();
+    const putBack = screen.getByRole("button", { name: /Put back the selected items/ });
+    expect(putBack).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: "kanban.db" }));
+    await user.click(screen.getByRole("checkbox", { name: "scripts" }));
+    await user.click(screen.getByRole("button", { name: "Put back the selected items (2)" }));
+    // Nothing is put back before the person reads what will run again.
+    expect(mocks.restoreHermesQuarantine).not.toHaveBeenCalled();
+    expect(screen.getByText(/these will run outside the sandbox again/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Put them back" }));
-    expect(mocks.restoreHermesQuarantine).toHaveBeenCalled();
-    expect(await screen.findByText(/2 items are back/)).toBeInTheDocument();
+    expect(mocks.restoreHermesQuarantine).toHaveBeenCalledWith(["kanban.db", "scripts"]);
+    expect(await screen.findByText(/1 items are back/)).toBeInTheDocument();
+    expect(screen.getByText(/a link is never put back/)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "hooks/x" })).not.toBeChecked();
     expect(mocks.dismissHermesQuarantineNotice).not.toHaveBeenCalled();
   });
 

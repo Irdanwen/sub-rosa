@@ -139,12 +139,47 @@ pub(super) fn run_once(
     date: &str,
 ) -> std::io::Result<Option<QuarantineRecord>> {
     let mut settings = admin_settings::load(hermes_home);
-    if settings.quarantine_done {
-        return Ok(None);
-    }
     let data_dir = hermes_home.parent().unwrap_or(hermes_home);
+    if settings.quarantine_done {
+        if settings.links_swept {
+            return Ok(None);
+        }
+        // Set aside before the link sweep existed: sweep once now, into the
+        // same record.
+        let dir = settings
+            .quarantine
+            .as_ref()
+            .map(|record| PathBuf::from(&record.dir))
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .unwrap_or_else(|| data_dir.join("quarantine").join(date));
+        let mut aside = Aside::new(hermes_home, &dir);
+        let cut = set_aside_links(&mut aside, hermes_home)?;
+        settings.links_swept = true;
+        let record = settings.quarantine.get_or_insert_with(Default::default);
+        if !aside.items.is_empty() || !cut.is_empty() {
+            record.dir = dir.to_string_lossy().into_owned();
+            record.items.extend(aside.items);
+            record.flagged.extend(cut);
+            record.seen = false;
+            record.restart_gateway = true;
+        }
+        let record = record.clone();
+        admin_settings::save(hermes_home, &settings)?;
+        return Ok(Some(record));
+    }
     let dir = data_dir.join("quarantine").join(date);
     let mut aside = Aside::new(hermes_home, &dir);
+    // A folder that is a link is set aside whole, before anything is read
+    // through it (D1).
+    for folder in FOREIGN_DIRS {
+        if hermes_home
+            .join(folder)
+            .symlink_metadata()
+            .is_ok_and(|meta| meta.file_type().is_symlink())
+        {
+            aside.take(folder)?;
+        }
+    }
     // An installation from before the split: its conversations, and maybe
     // its sign-ins, stay on the unrestricted side.
     let upgraded = hermes_home.join("state.db").is_file();
@@ -161,6 +196,8 @@ pub(super) fn run_once(
             }
         }
     }
+    // Every other link of the home (D1).
+    let cut = set_aside_links(&mut aside, hermes_home)?;
     for routine in set_aside_script_routines(hermes_home, &dir)? {
         aside.note(routine)?;
     }
@@ -182,6 +219,7 @@ pub(super) fn run_once(
             flagged.push(format!("memories/{name}"));
         }
     }
+    flagged.extend(cut.iter().cloned());
     let items = aside.items;
     if !flagged.is_empty() {
         std::fs::create_dir_all(&dir)?;
@@ -211,7 +249,7 @@ pub(super) fn run_once(
         // Nothing to say on a new installation with nothing there.
         seen: items.is_empty() && flagged.is_empty() && redo.is_empty(),
         flagged,
-        restart_gateway: !items.is_empty(),
+        restart_gateway: !items.is_empty() || !cut.is_empty(),
         redo,
     };
     if !items.is_empty() {
@@ -222,6 +260,7 @@ pub(super) fn run_once(
         );
     }
     settings.quarantine_done = true;
+    settings.links_swept = true;
     settings.quarantine = Some(record.clone());
     admin_settings::save(hermes_home, &settings)?;
     Ok(Some(record))
@@ -305,35 +344,141 @@ fn skill_dirs(dir: &Path, relative: &str, depth: usize, out: &mut Vec<String>) {
     }
 }
 
-/// Puts back what was set aside, into the shared home the app writes from
-/// outside the jail, where nothing is there now; the gateway picks it up at
-/// its next start. Routines set aside go back into the routines list.
-/// Returns how many items came back.
-pub(super) fn restore(hermes_home: &Path) -> std::io::Result<usize> {
+/// What a restore did.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreOutcome {
+    /// Back in the home.
+    pub restored: Vec<String>,
+    /// Left in the quarantine folder: a link (symbolic or hard) is never put
+    /// back, nor anything whose place in the home is taken.
+    pub refused: Vec<String>,
+}
+
+/// Puts back the chosen items of what was set aside, into the shared home
+/// the app writes from outside the jail; the gateway picks them up at its
+/// next start. Routines set aside go back into the routines list. A link,
+/// or a folder holding one, stays aside (ADR-0140, D1).
+pub(super) fn restore(hermes_home: &Path, chosen: &[String]) -> std::io::Result<RestoreOutcome> {
     let mut settings = admin_settings::load(hermes_home);
     let Some(record) = settings.quarantine.clone() else {
-        return Ok(0);
+        return Ok(RestoreOutcome::default());
     };
     let dir = PathBuf::from(&record.dir);
-    let mut restored = 0;
-    for item in &record.items {
-        if item.contains('#') || !is_plain_relative(item) {
+    let mut outcome = RestoreOutcome::default();
+    let mut routines = Vec::new();
+    for item in record.items.iter().filter(|item| chosen.contains(item)) {
+        if let Some(("cron/jobs.json", id)) = item.split_once('#') {
+            routines.push((item.clone(), id.to_string()));
             continue;
         }
         let from = dir.join(item);
         let to = hermes_home.join(item);
-        if from.symlink_metadata().is_ok() && to.symlink_metadata().is_err() {
-            move_aside(&from, &to)?;
-            restored += 1;
+        if !is_plain_relative(item)
+            || from.symlink_metadata().is_err()
+            || to.symlink_metadata().is_ok()
+            || holds_a_link(&from)
+        {
+            outcome.refused.push(item.clone());
+            continue;
+        }
+        move_aside(&from, &to)?;
+        outcome.restored.push(item.clone());
+    }
+    let ids: Vec<String> = routines.iter().map(|(_, id)| id.clone()).collect();
+    let back = restore_routines(hermes_home, &dir, &ids)?;
+    for (item, id) in routines {
+        if back.contains(&id) {
+            outcome.restored.push(item);
+        } else {
+            outcome.refused.push(item);
         }
     }
-    restored += restore_routines(hermes_home, &dir)?;
     if let Some(kept) = settings.quarantine.as_mut() {
-        kept.seen = true;
-        kept.restart_gateway |= restored > 0;
+        kept.items.retain(|item| !outcome.restored.contains(item));
+        kept.restart_gateway |= !outcome.restored.is_empty();
+        if kept.items.is_empty() {
+            kept.seen = true;
+        }
     }
     admin_settings::save(hermes_home, &settings)?;
-    Ok(restored)
+    Ok(outcome)
+}
+
+/// Whether `path` is, or holds anywhere below it, a symbolic link or a file
+/// with a second name. Never followed.
+fn holds_a_link(path: &Path) -> bool {
+    let mut stack = vec![path.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        let Ok(meta) = next.symlink_metadata() else {
+            return true;
+        };
+        if meta.file_type().is_symlink() || (meta.is_file() && super::home_prep::hard_linked(&meta))
+        {
+            return true;
+        }
+        if meta.is_dir() {
+            match std::fs::read_dir(&next) {
+                Ok(entries) => stack.extend(entries.flatten().map(|entry| entry.path())),
+                Err(_) => return true,
+            }
+        }
+    }
+    false
+}
+
+/// Sets aside every symbolic link of the home, wherever it is (a folder
+/// that is a link included), and cuts every second name a file has by
+/// replacing it with a copy of itself (its contents are kept: the session
+/// database may be one). The person's workspace keeps its own links.
+/// Returns the files whose second name was cut.
+fn set_aside_links(aside: &mut Aside<'_>, hermes_home: &Path) -> std::io::Result<Vec<String>> {
+    let mut cut = Vec::new();
+    let mut stack = vec![hermes_home.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let mut entries: Vec<PathBuf> = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries.flatten().map(|entry| entry.path()).collect(),
+            Err(_) => continue,
+        };
+        entries.sort();
+        for path in entries {
+            let Ok(relative) = path.strip_prefix(hermes_home) else {
+                continue;
+            };
+            let relative = relative.to_string_lossy().into_owned();
+            let Ok(meta) = path.symlink_metadata() else {
+                continue;
+            };
+            if meta.file_type().is_symlink() {
+                aside.take(&relative)?;
+            } else if meta.is_file() && super::home_prep::hard_linked(&meta) {
+                let contents = std::fs::read(&path)?;
+                replace_with_copy(&path, &contents)?;
+                cut.push(format!("{relative} (a second name of it was removed)"));
+            } else if meta.is_dir() && relative != "workspace" {
+                stack.push(path);
+            }
+        }
+    }
+    Ok(cut)
+}
+
+/// Replaces `path` with a new file holding `contents` (a rename, never a
+/// write through the old name).
+fn replace_with_copy(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let temp = path.with_extension("subrosa-cut.tmp");
+    let _ = std::fs::remove_file(&temp);
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp)?;
+    file.write_all(contents)?;
+    file.sync_all()?;
+    if let Ok(meta) = path.metadata() {
+        let _ = std::fs::set_permissions(&temp, meta.permissions());
+    }
+    std::fs::rename(&temp, path)
 }
 
 /// A path relative to the home that names no parent and no root.
@@ -343,10 +488,17 @@ fn is_plain_relative(item: &str) -> bool {
         .all(|part| matches!(part, std::path::Component::Normal(_)))
 }
 
-fn restore_routines(hermes_home: &Path, dir: &Path) -> std::io::Result<usize> {
+fn restore_routines(
+    hermes_home: &Path,
+    dir: &Path,
+    chosen: &[String],
+) -> std::io::Result<Vec<String>> {
     let aside = dir.join("cron/jobs-set-aside.json");
+    if chosen.is_empty() {
+        return Ok(Vec::new());
+    }
     let Ok(text) = std::fs::read_to_string(&aside) else {
-        return Ok(0);
+        return Ok(Vec::new());
     };
     let removed: Vec<Value> = serde_json::from_str::<Value>(&text)
         .ok()
@@ -358,14 +510,24 @@ fn restore_routines(hermes_home: &Path, dir: &Path) -> std::io::Result<usize> {
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or_else(|| serde_json::json!({ "jobs": [] }));
     let Some(jobs) = current.get_mut("jobs").and_then(Value::as_array_mut) else {
-        return Ok(0);
+        return Ok(Vec::new());
     };
-    let mut back = 0;
+    let mut back = Vec::new();
+    let mut still_aside = Vec::new();
     for job in removed {
-        let id = job.get("id").cloned();
-        if id.is_some() && !jobs.iter().any(|kept| kept.get("id") == id.as_ref()) {
+        let id = job
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let taken = jobs
+            .iter()
+            .any(|kept| kept.get("id").and_then(Value::as_str) == Some(id.as_str()));
+        if chosen.contains(&id) && !id.is_empty() && !taken {
             jobs.push(job);
-            back += 1;
+            back.push(id);
+        } else {
+            still_aside.push(job);
         }
     }
     std::fs::create_dir_all(hermes_home.join("cron"))?;
@@ -373,7 +535,15 @@ fn restore_routines(hermes_home: &Path, dir: &Path) -> std::io::Result<usize> {
         &path,
         &serde_json::to_string_pretty(&current).unwrap_or_default(),
     )?;
-    std::fs::remove_file(&aside)?;
+    if still_aside.is_empty() {
+        std::fs::remove_file(&aside)?;
+    } else {
+        std::fs::write(
+            &aside,
+            serde_json::to_string_pretty(&serde_json::json!({ "jobs": still_aside }))
+                .unwrap_or_default(),
+        )?;
+    }
     Ok(back)
 }
 
@@ -479,12 +649,22 @@ pub fn dismiss_hermes_quarantine_notice(app: AppHandle) -> Result<(), AppError> 
         .map_err(|error| AppError::new("hermes_settings_failed", error.to_string()))
 }
 
-/// The person puts back what was set aside (it runs outside the sandbox
-/// again from the gateway's next start). Returns how many items came back.
+/// The person puts back the items they chose of what was set aside (they
+/// run outside the sandbox again from the gateway's next start).
 #[tauri::command]
-pub fn restore_hermes_quarantine(app: AppHandle) -> Result<usize, AppError> {
+pub fn restore_hermes_quarantine(
+    app: AppHandle,
+    request: RestoreQuarantineRequest,
+) -> Result<RestoreOutcome, AppError> {
     let home = record_home(&app)?;
-    restore(&home).map_err(|error| AppError::new("hermes_restore_failed", error.to_string()))
+    restore(&home, &request.items)
+        .map_err(|error| AppError::new("hermes_restore_failed", error.to_string()))
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreQuarantineRequest {
+    pub items: Vec<String>,
 }
 
 #[cfg(test)]
@@ -587,8 +767,9 @@ mod tests {
         }
         assert!(notice.flagged.contains(&"skills/planted".to_string()));
         assert_eq!(notice.items, record.items);
-        let back = restore(&home).unwrap();
-        assert_eq!(back, record.items.len());
+        let back = restore(&home, &record.items).unwrap();
+        assert_eq!(back.restored.len(), record.items.len(), "{back:?}");
+        assert!(back.refused.is_empty());
         assert!(home.join("hooks/x/handler.py").exists());
         assert!(home
             .join("platforms/pairing/telegram-approved.json")
@@ -600,6 +781,104 @@ mod tests {
         assert!(notice_of(&home).is_none());
         // Back in the home, so the gateway is restarted to take them.
         assert!(take_gateway_restart(&home));
+    }
+
+    /// ADR-0140 (D1): every link planted in the shared home before the fix
+    /// is dealt with at the first start: a link (a folder that is one
+    /// included) is set aside without anything read through it, a second
+    /// name of a file is cut with its contents kept. None of it is ever put
+    /// back.
+    #[cfg(unix)]
+    #[test]
+    fn the_links_planted_before_the_fix_are_set_aside_or_cut() {
+        use std::os::unix::fs::MetadataExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("hermes");
+        let outside = dir.path().join("outside");
+        plant(&outside, "scripts/run.sh", "touch /tmp/owned\n");
+        plant(
+            &outside,
+            "j",
+            r#"{"jobs": [{"id": "keep", "prompt": "hi"}]}"#,
+        );
+        plant(&outside, "db", "conversations");
+        plant(&outside, "c", "approvals:\n  mode: off\n");
+        std::fs::create_dir_all(home.join("cron")).unwrap();
+        std::fs::create_dir_all(home.join("sessions")).unwrap();
+        std::os::unix::fs::symlink(outside.join("scripts"), home.join("scripts")).unwrap();
+        std::os::unix::fs::symlink(outside.join("c"), home.join("config.yaml")).unwrap();
+        std::os::unix::fs::symlink(outside.join("c"), home.join("sessions/s.json")).unwrap();
+        std::fs::hard_link(outside.join("j"), home.join("cron/jobs.json")).unwrap();
+        std::fs::hard_link(outside.join("db"), home.join("state.db")).unwrap();
+        std::fs::create_dir_all(home.join("workspace")).unwrap();
+        std::os::unix::fs::symlink(outside.join("c"), home.join("workspace/mine")).unwrap();
+
+        let record = run_once(&home, "2026-11-02").unwrap().unwrap();
+        for item in ["scripts", "config.yaml", "sessions/s.json"] {
+            assert!(
+                record.items.contains(&item.to_string()),
+                "{item}: {record:?}"
+            );
+            assert!(home.join(item).symlink_metadata().is_err(), "{item}");
+        }
+        // Nothing was moved out of the folder the link pointed to.
+        assert!(outside.join("scripts/run.sh").exists());
+        // The second names are cut, the contents kept.
+        assert_eq!(
+            std::fs::read_to_string(home.join("state.db")).unwrap(),
+            "conversations"
+        );
+        assert_eq!(std::fs::metadata(home.join("state.db")).unwrap().nlink(), 1);
+        assert_eq!(std::fs::metadata(outside.join("db")).unwrap().nlink(), 1);
+        assert_eq!(
+            std::fs::metadata(home.join("cron/jobs.json"))
+                .unwrap()
+                .nlink(),
+            1
+        );
+        assert!(record
+            .flagged
+            .iter()
+            .any(|item| item.starts_with("state.db")));
+        // The person's workspace keeps its links.
+        assert!(home.join("workspace/mine").symlink_metadata().is_ok());
+        // A link is never put back.
+        let back = restore(&home, &record.items).unwrap();
+        assert!(back.restored.is_empty(), "{back:?}");
+        assert_eq!(back.refused.len(), 3);
+        assert!(home.join("scripts").symlink_metadata().is_err());
+    }
+
+    /// ADR-0140 (D3): the person puts back the items they choose, one by
+    /// one, routines included; the rest stays aside and listed.
+    #[test]
+    fn the_person_puts_back_only_what_they_choose() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("hermes");
+        plant(&home, "hooks/a/HOOK.yaml", "name: a\n");
+        plant(&home, "hooks/b/HOOK.yaml", "name: b\n");
+        plant(
+            &home,
+            "cron/jobs.json",
+            r#"{"jobs": [{"id": "s1", "script": "x.sh"}, {"id": "s2", "script": "y.sh"}]}"#,
+        );
+        let record = run_once(&home, "2026-11-02").unwrap().unwrap();
+        let chosen = vec!["hooks/a".to_string(), "cron/jobs.json#s2".to_string()];
+        let back = restore(&home, &chosen).unwrap();
+        assert_eq!(back.restored, chosen);
+        assert!(home.join("hooks/a/HOOK.yaml").exists());
+        assert!(!home.join("hooks/b").exists());
+        let jobs: Value =
+            serde_json::from_str(&std::fs::read_to_string(home.join("cron/jobs.json")).unwrap())
+                .unwrap();
+        assert_eq!(jobs["jobs"].as_array().unwrap().len(), 1);
+        assert_eq!(jobs["jobs"][0]["id"], "s2");
+        let left = notice_of(&home).unwrap();
+        assert_eq!(left.items.len(), record.items.len() - 2);
+        assert!(left.items.contains(&"hooks/b".to_string()));
+        assert!(left.items.contains(&"cron/jobs.json#s1".to_string()));
+        let again = restore(&home, &["cron/jobs.json#s1".to_string()]).unwrap();
+        assert_eq!(again.restored, ["cron/jobs.json#s1"]);
     }
 
     /// ADR-0140 (F4): a skill is the runtime's own only when its exact name
@@ -626,7 +905,7 @@ mod tests {
         let record = run_once(&home, "2026-10-31").unwrap().unwrap();
         assert!(record.items.is_empty() && !record.seen);
         assert_eq!(record.redo, ["mcp_sign_in", "workspace"]);
-        assert_eq!(restore(&home).unwrap(), 0);
+        assert_eq!(restore(&home, &[]).unwrap(), RestoreOutcome::default());
         assert!(notice_of(&home).is_none());
     }
 

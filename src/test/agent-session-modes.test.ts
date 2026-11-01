@@ -22,10 +22,19 @@ describe("the home of a session (ADR-0140)", () => {
     });
   });
 
-  it("never breaks the caller when the native side is absent", () => {
+  it("says when the native side could not record it, without breaking the caller", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     invoke.mockImplementationOnce(() => {
       throw new Error("no shell");
     });
-    expect(() => recordSessionHome("s-3", false)).not.toThrow();
+    expect(() => rememberSessionMode("s-3", false)).not.toThrow();
+    invoke.mockImplementationOnce(async () => {
+      throw new Error("refused");
+    });
+    await expect(recordSessionHome("s-4", true)).rejects.toThrow("refused");
+    await Promise.resolve();
+    expect(logged).toHaveBeenCalledTimes(2);
+    expect(String(logged.mock.calls[0][0])).toContain("s-3");
+    logged.mockRestore();
   });
 });

@@ -1277,9 +1277,13 @@ export async function dismissHermesQuarantineNotice() {
   return invoke<void>("dismiss_hermes_quarantine_notice");
 }
 
-/** Puts back what was set aside; returns how many items came back. */
-export async function restoreHermesQuarantine() {
-  return invoke<number>("restore_hermes_quarantine");
+/** What a restore put back, and what it left aside (a link never comes
+ * back, nor an item whose place is taken). */
+export type HermesRestoreOutcome = { restored: string[]; refused: string[] };
+
+/** Puts back the items the person chose of what was set aside. */
+export async function restoreHermesQuarantine(items: string[]) {
+  return invoke<HermesRestoreOutcome>("restore_hermes_quarantine", { request: { items } });
 }
 
 export async function hermesBridgeMessagingPlatforms() {
@@ -1569,6 +1573,9 @@ export type HermesMcpOauthLoginResult = {
   authUrl: string | null;
   /** True when the wait elapsed before the CLI reported a terminal state. */
   timedOut: boolean;
+  /** True when the address is not on an origin the server declares: it was
+   * not opened, and the person decides whether to open it (ADR-0140). */
+  authUrlUnverified?: boolean;
 };
 
 /**

@@ -48,6 +48,15 @@ STATE_FILES = (
 SCRIPT = [
     ("terminal", {"command": "echo hi > shell-out.txt && cat shell-out.txt"}, "ok"),
     ("terminal", {"command": "sleep 1; echo bg", "background": True}, "ok"),
+    # The system services the jail keeps (ADR-0140): TLS to a real host
+    # (read only, free), file watching, and what it refuses.
+    ("write_file", {"path": "tls_probe.py", "content": "import urllib.request\nprint('TLS-' + str(urllib.request.urlopen('https://example.com', timeout=20).status))\n"}, "ok"),
+    ("terminal", {"command": "/usr/bin/python3 tls_probe.py"}, "contains:TLS-200"),
+    ("terminal", {"command": "curl -s -o /dev/null -w 'CURL-%{http_code}' https://example.com"}, "contains:CURL-200"),
+    ("terminal", {"command": "if command -v node >/dev/null; then node -e \"const fs=require('fs');fs.watch('.',()=>{console.log('WATCH-OK');process.exit(0)});let i=0;setInterval(()=>fs.writeFileSync('w'+(i++)+'.tmp','x'),300);setTimeout(()=>process.exit(1),8000)\"; else echo WATCH-OK-NO-NODE; fi"}, "contains:WATCH-OK"),
+    ("terminal", {"command": "/usr/bin/open https://example.com; echo OPEN-RC=$?"}, "contains:OPEN-RC=1"),
+    ("write_file", {"path": "ax_probe.py", "content": "import ctypes\nf = ctypes.CDLL('/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices').AXIsProcessTrusted\nf.restype = ctypes.c_bool\nprint('AX-' + str(f()))\n"}, "ok"),
+    ("terminal", {"command": "python3 ax_probe.py"}, "contains:AX-False"),
     ("write_file", {"path": "note.md", "content": "hello\n"}, "ok"),
     ("read_file", {"path": "note.md"}, "ok"),
     ("patch", {"mode": "replace", "path": "note.md", "old_string": "hello", "new_string": "hullo"}, "ok"),
@@ -191,6 +200,8 @@ async def drive(port, token, report):
 
 
 def judge(outcome, text):
+    if outcome.startswith("contains:"):
+        return outcome[len("contains:"):] in text
     lowered = text.lower()
     refused = "operation not permitted" in lowered or "permissionerror" in lowered or '"success": false' in lowered
     failed = (

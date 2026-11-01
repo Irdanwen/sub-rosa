@@ -67,6 +67,7 @@ impl RealJail {
             temp_roots: &temp,
             agent_cli_access: false,
             working_dir: None,
+            result_dir: None,
         });
         let profile = root.join("hermes-sandbox.sb");
         std::fs::write(&profile, profile_text).unwrap();
@@ -461,6 +462,32 @@ fn settings_changes_succeed_from_the_app_while_the_runtime_is_jailed() {
 #[ignore = "needs the installed runtime (SUBROSA_HERMES_RUNTIME)"]
 fn the_jailed_reader_reads_the_sandboxed_home() {
     let jail = RealJail::new();
+    // The reader's own profile: the runtime's, plus its answer folder (D5).
+    let results = super::sandbox_profile::reader_result_dir(&jail.home);
+    super::sandbox_profile::create_private_dir(&results).unwrap();
+    let results = std::fs::canonicalize(&results).unwrap();
+    let person = PathBuf::from(std::env::var_os("HOME").unwrap());
+    let temp = sandbox_temp_roots();
+    let shared = jail
+        .home
+        .parent()
+        .unwrap()
+        .join(super::home_split::SHARED_HOME);
+    let reader = jail.dir.path().join("reader.sb");
+    std::fs::write(
+        &reader,
+        build_sandbox_profile(&SandboxGrants {
+            home: &person,
+            hermes_home: &jail.home,
+            runtime_dir: &jail.runtime,
+            closed_homes: &[shared],
+            temp_roots: &temp,
+            agent_cli_access: false,
+            working_dir: None,
+            result_dir: Some(&results),
+        }),
+    )
+    .unwrap();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -469,7 +496,7 @@ fn the_jailed_reader_reads_the_sandboxed_home() {
         .block_on(admin_once::read_on(
             &jail.hermes().to_string_lossy(),
             &jail.home,
-            Some(jail.profile.clone()),
+            Some(reader),
             reqwest::Method::GET,
             "/api/sessions?limit=5&offset=0",
             None,

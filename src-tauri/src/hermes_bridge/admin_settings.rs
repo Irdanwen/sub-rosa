@@ -47,6 +47,10 @@ pub(super) struct HermesSettings {
     pub quarantine_done: bool,
     #[serde(default)]
     pub quarantine: Option<super::quarantine::QuarantineRecord>,
+    /// Whether the shared home was swept once for links a jailed process
+    /// could plant before ADR-0140 (`quarantine::set_aside_links`).
+    #[serde(default)]
+    pub links_swept: bool,
     /// Whether the sandboxed home received, once, the conversations of the
     /// shared home from before the split (`home_split::migrate_once`).
     #[serde(default)]

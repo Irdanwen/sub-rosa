@@ -25,6 +25,7 @@ fn grants<'a>(
         temp_roots,
         agent_cli_access,
         working_dir,
+        result_dir: None,
     }
 }
 
@@ -281,6 +282,7 @@ impl KernelJail {
             temp_roots: &temp,
             agent_cli_access,
             working_dir: working.as_deref(),
+            result_dir: None,
         });
         let profile_path = root.join("profile.sb");
         std::fs::write(&profile_path, profile).ok()?;
@@ -687,6 +689,11 @@ const SERVICES_THAT_START_PROGRAMS: &[&str] = &[
     "com.apple.dock.server",
     "com.apple.pbs.fetch_services",
     "com.apple.finder.ServiceProvider",
+    // ADR-0140 (D2): the screen, synthesized events, privacy answers, the
+    // pasteboard.
+    "com.apple.windowserver.active",
+    "com.apple.tccd",
+    "com.apple.pasteboard.1",
 ];
 
 fn look_up(jail: Option<&KernelJail>, names: &[&str]) -> Vec<(String, i64)> {
@@ -736,8 +743,39 @@ fn no_service_that_starts_a_program_outside_answers_the_jail() {
         checked += 1;
     }
     assert!(checked >= 10, "only {checked} services exist to check");
-    let needed = look_up(Some(&jail), &["com.apple.cfprefsd.agent"]);
-    assert_eq!(needed, vec![("com.apple.cfprefsd.agent".to_string(), 0)]);
+    // Every service of the allowlist still answers.
+    let needed = look_up(Some(&jail), ALLOWED_MACH_SERVICES);
+    assert_eq!(needed.len(), ALLOWED_MACH_SERVICES.len());
+    for (name, code) in needed {
+        assert_eq!(code, 0, "{name} is refused to the jail");
+    }
+}
+
+/// ADR-0140 (D2): whatever the app was granted (Accessibility, posting
+/// events, recording the screen), every privacy check answers no in the
+/// jail, and the window server cannot be reached.
+#[test]
+fn the_jail_holds_none_of_the_apps_privacy_grants() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let probe = "import ctypes\nA = ctypes.CDLL('/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices')\nG = ctypes.CDLL('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')\nfor lib, name in ((A, 'AXIsProcessTrusted'), (G, 'CGPreflightPostEventAccess'), (G, 'CGPreflightScreenCaptureAccess'), (G, 'CGPreflightListenEventAccess')):\n    f = getattr(lib, name)\n    f.restype = ctypes.c_bool\n    print(name, f())\nG.CGMainDisplayID.restype = ctypes.c_uint32\nprint('display', G.CGMainDisplayID())\n";
+    let out = Command::new(SANDBOX_EXEC_PATH)
+        .arg("-f")
+        .arg(&jail.profile_path)
+        .args(["/usr/bin/python3", "-I", "-c", probe])
+        .output()
+        .expect("run the privacy probe");
+    let said = String::from_utf8_lossy(&out.stdout);
+    for name in [
+        "AXIsProcessTrusted",
+        "CGPreflightPostEventAccess",
+        "CGPreflightScreenCaptureAccess",
+        "CGPreflightListenEventAccess",
+    ] {
+        assert!(said.contains(&format!("{name} False")), "{said}");
+    }
+    assert!(said.contains("display 0"), "{said}");
 }
 
 /// ADR-0140 (C1): `open` of an application from the jail starts nothing.
@@ -878,4 +916,97 @@ fn credential_stores_stay_unreadable() {
     std::fs::write(&secret, "TOPSECRET").unwrap();
     let out = jail.sh(&format!("cat {}", shell_quote(&secret)));
     assert!(!String::from_utf8_lossy(&out.stdout).contains("TOPSECRET"));
+}
+
+/// ADR-0140 (D4): a sandboxed session is told it can open nothing on the
+/// person's screen, and to give the link or the path instead.
+#[test]
+fn a_sandboxed_session_is_told_to_give_the_link() {
+    let hint = crate::hermes_bridge::environment_hint_for_spawn(false, true, None).unwrap();
+    assert!(hint.contains("You cannot open links"), "{hint}");
+    assert!(hint.contains("give the user the link"), "{hint}");
+    let soul = crate::hermes_bridge::JUNE_SOUL_SANDBOX_MD;
+    assert!(soul.contains("opening a link, a file or an application"));
+    assert!(soul.contains("give them the link or the path"));
+    let unrestricted = crate::hermes_bridge::environment_hint_for_spawn(true, true, None).unwrap();
+    assert!(!unrestricted.contains("You cannot open links"));
+}
+
+/// ADR-0140 (D5): the one-off reader answers into a folder of the app's
+/// data that the runtime's jail cannot write, but the reader's can. Laid out
+/// outside the temp folders, as the app's data is.
+#[test]
+fn the_runtime_cannot_write_the_readers_answers() {
+    if !Path::new(SANDBOX_EXEC_PATH).exists() {
+        return;
+    }
+    let caches = PathBuf::from(std::env::var_os("HOME").unwrap()).join("Library/Caches");
+    let dir = tempfile::tempdir_in(caches).unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let home = root.join("hermes-sandboxed");
+    let shared = root.join("hermes");
+    let runtime = root.join("hermes-runtime");
+    for folder in [&home, &shared, &runtime] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    let results = super::reader_result_dir(&home);
+    assert_eq!(results.parent(), Some(root.as_path()));
+    super::create_private_dir(&results).unwrap();
+    let temp = sandbox_temp_roots();
+    let write = |result_dir: Option<&Path>| {
+        let profile = root.join("p.sb");
+        std::fs::write(
+            &profile,
+            build_sandbox_profile(&SandboxGrants {
+                home: &root,
+                hermes_home: &home,
+                runtime_dir: &runtime,
+                closed_homes: std::slice::from_ref(&shared),
+                temp_roots: &temp,
+                agent_cli_access: false,
+                working_dir: None,
+                result_dir,
+            }),
+        )
+        .unwrap();
+        let target = results.join("admin-result-x.json");
+        let _ = std::fs::remove_file(&target);
+        let _ = Command::new(SANDBOX_EXEC_PATH)
+            .arg("-f")
+            .arg(&profile)
+            .args([
+                "/bin/sh",
+                "-c",
+                &format!("printf x > {}", shell_quote(&target)),
+            ])
+            .output();
+        target.exists()
+    };
+    assert!(!write(None), "the runtime's jail wrote the reader's answer");
+    assert!(write(Some(&results)), "the reader cannot write its answer");
+}
+
+/// ADR-0140 (D2): what a runtime needs from the system still works under the
+/// allowlist: users and groups, name resolution, subprocesses.
+#[test]
+fn a_runtime_still_resolves_users_and_names_in_the_jail() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let out = Command::new(SANDBOX_EXEC_PATH)
+        .arg("-f")
+        .arg(&jail.profile_path)
+        .args([
+            "/usr/bin/python3",
+            "-I",
+            "-c",
+            "import grp, os, pwd, socket, subprocess\npwd.getpwuid(os.getuid())\ngrp.getgrgid(os.getgid())\nsocket.getaddrinfo('localhost', 80)\nsubprocess.run(['/bin/echo', 'ok'], check=True)\nprint('LIVES')\n",
+        ])
+        .output()
+        .expect("run python in the jail");
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("LIVES"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }

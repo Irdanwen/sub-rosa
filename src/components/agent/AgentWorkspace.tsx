@@ -324,7 +324,7 @@ import { hermesConnectionForMode } from "../../lib/hermes-connection";
 import { filesystemRootWords } from "./filesystem-root-words";
 import {
   forgetSessionMode,
-  recordSessionHome,
+  recordSessionHomeInBackground,
   rememberSessionMode,
   sessionUnrestricted,
 } from "../../lib/agent-session-modes";
@@ -5414,7 +5414,7 @@ export function AgentWorkspace({
       const resumed = await resume(gateway);
       if (resumed) {
         // The home it was resumed in owns it from now on (ADR-0140).
-        recordSessionHome(storedSessionId, sessionUnrestricted(storedSessionId));
+        recordSessionHomeInBackground(storedSessionId, sessionUnrestricted(storedSessionId));
         return { gateway, runtimeSessionId: rememberRuntimeSessionId(storedSessionId, resumed) };
       }
     } catch (err) {

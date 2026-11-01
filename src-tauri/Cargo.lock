@@ -4579,6 +4579,7 @@ dependencies = [
  "june-embed",
  "keyring",
  "libc",
+ "libsqlite3-sys",
  "ndk-context",
  "objc2",
  "objc2-app-kit",

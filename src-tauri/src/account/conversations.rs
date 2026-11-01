@@ -476,10 +476,7 @@ async fn backfill_from(
     home: crate::hermes_bridge::session_owner::Owner,
 ) -> Result<(), AppError> {
     use crate::hermes_bridge::session_owner;
-    let source_pool = sqlx_sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect_with(session_owner::hardened_read_options(source))
-        .await?;
+    let source_pool = session_owner::hardened_pool(source, 1).await?;
     let markers: Vec<(String, String, f64)> = query(SESSION_MARKERS)
         .fetch_all(&source_pool)
         .await?

@@ -169,6 +169,7 @@ function bridgeResolving(
     message: string | null;
     authUrl: string | null;
     timedOut: boolean;
+    authUrlUnverified: boolean;
   }>,
 ): McpOauthBridge {
   return vi.fn(async () => ({
@@ -176,6 +177,7 @@ function bridgeResolving(
     message: result.message ?? null,
     authUrl: result.authUrl ?? null,
     timedOut: result.timedOut ?? false,
+    authUrlUnverified: result.authUrlUnverified ?? false,
   }));
 }
 
@@ -223,7 +225,23 @@ describe("mcp oauth — controller", () => {
     // A timeout is the user's browser step to finish: no verify, no notification.
     expect(testSpy).not.toHaveBeenCalled();
     expect(login?.authUrl).toContain("auth.linear.app");
+    expect(login?.authUrlUnverified).toBe(false);
 
+    controller.dispose();
+  });
+
+  it("keeps the bridge's word that it did not open an unverified address", async () => {
+    const harness = makeAdminHarness(mcpOAuthAuthMissingScenario());
+    const controller = new McpOauthController(harness as McpServersEngine, {
+      bridge: bridgeResolving({
+        ok: false,
+        timedOut: true,
+        authUrl: "https://elsewhere.example/authorize",
+        authUrlUnverified: true,
+      }),
+    });
+    await controller.signIn("linear");
+    expect(controller.getSnapshot().logins.get("linear")?.authUrlUnverified).toBe(true);
     controller.dispose();
   });
 
@@ -374,5 +392,30 @@ describe("mcp oauth — McpServersView", () => {
     expect(screen.getByText(/Waiting for browser/i)).toBeInTheDocument();
     const link = screen.getByRole("link", { name: /Open the sign-in page/i });
     expect(link).toHaveAttribute("href", "https://auth.linear.app/authorize");
+    expect(screen.queryByText(/did not open this sign-in page/)).toBeNull();
+  });
+
+  it("says a sign-in page it did not open is not on the server's own address", () => {
+    const oauth: McpOauthState = {
+      logins: new Map([
+        [
+          "linear",
+          {
+            server: "linear",
+            phase: "waiting",
+            authUrl: "https://elsewhere.example/authorize",
+            authUrlUnverified: true,
+          },
+        ],
+      ]),
+      signIn: () => {},
+      clear: () => {},
+      busy: false,
+    };
+    render(<McpServersView state={oauthServersState()} oauth={oauth} />);
+    expect(
+      screen.getByText(/did not open this sign-in page: .*\(elsewhere\.example\)/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Open the sign-in page/i })).toBeInTheDocument();
   });
 });

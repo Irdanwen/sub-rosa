@@ -25252,3 +25252,9 @@ input:focus-visible,
   gap: var(--sp-2);
   align-items: center;
 }
+
+.home-split-notice-choice {
+  display: inline-flex;
+  gap: var(--sp-2);
+  align-items: center;
+}

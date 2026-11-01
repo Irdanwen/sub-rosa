@@ -122,22 +122,60 @@ fn env_set_aside(hermes_home: &Path) -> std::path::PathBuf {
         .join("hermes-env-before-adr-0140")
 }
 
-/// Writes a file the app owns in the home. A symlink in its place (one a
-/// jailed process could plant before ADR-0140) is removed first, so the
-/// write never lands where it points.
+/// Writes a file the app owns in the home, never in place (ADR-0140, D1):
+/// the contents go to a new file beside it, which then takes the name. So a
+/// link in its place, symbolic or hard (one a jailed process could plant
+/// before ADR-0140), is replaced rather than written through: the file it
+/// shared its contents with keeps the old ones and is no longer the home's.
+/// A folder in its place is removed; a folder that leads to it may not be a
+/// link.
 pub(super) fn write_owned(path: &Path, contents: &str) -> std::io::Result<()> {
-    match path.symlink_metadata() {
-        Ok(meta) if meta.file_type().is_symlink() => std::fs::remove_file(path)?,
-        Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(path)?,
-        _ => {}
+    use std::io::Write as _;
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+        return Err(std::io::Error::other("no file name"));
+    };
+    if dir
+        .symlink_metadata()
+        .is_ok_and(|meta| meta.file_type().is_symlink())
+    {
+        return Err(std::io::Error::other(format!(
+            "{} is a link; nothing is written through it",
+            dir.display()
+        )));
     }
-    std::fs::write(path, contents)?;
+    if let Ok(meta) = path.symlink_metadata() {
+        if meta.is_dir() {
+            std::fs::remove_dir_all(path)?;
+        } else if hard_linked(&meta) {
+            eprintln!(
+                "hermes home: {} had another name; it is replaced, not written",
+                path.display()
+            );
+        }
+    }
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let temp = dir.join(format!(
+        ".{}.{}-{}.tmp",
+        name.to_string_lossy(),
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(0o600);
     }
-    Ok(())
+    let written = options.open(&temp).and_then(|mut file| {
+        file.write_all(contents.as_bytes())?;
+        file.sync_all()
+    });
+    let renamed = written.and_then(|()| std::fs::rename(&temp, path));
+    if renamed.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    renamed
 }
 
 /// Removes the sticky profile from the home before the gateway starts; the
@@ -258,13 +296,13 @@ fn special(_meta: &std::fs::Metadata) -> bool {
 }
 
 #[cfg(unix)]
-fn hard_linked(meta: &std::fs::Metadata) -> bool {
+pub(super) fn hard_linked(meta: &std::fs::Metadata) -> bool {
     use std::os::unix::fs::MetadataExt as _;
     meta.nlink() > 1
 }
 
 #[cfg(not(unix))]
-fn hard_linked(_meta: &std::fs::Metadata) -> bool {
+pub(super) fn hard_linked(_meta: &std::fs::Metadata) -> bool {
     false
 }
 
@@ -284,6 +322,45 @@ fn failed(error: std::io::Error) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ADR-0140 (D1): a file the app owns is never written in place. A hard
+    /// link planted before the fix keeps its old contents, out of the home;
+    /// a symbolic link is replaced, not followed; a link to the folder is
+    /// refused.
+    #[cfg(unix)]
+    #[test]
+    fn an_owned_file_is_replaced_never_written_through() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("hermes");
+        std::fs::create_dir_all(home.join("cron")).unwrap();
+        let outside = dir.path().join("outside");
+        std::fs::write(&outside, "planted").unwrap();
+        let jobs = home.join("cron/jobs.json");
+        std::fs::hard_link(&outside, &jobs).unwrap();
+        write_owned(&jobs, "{\"jobs\": []}").unwrap();
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "planted");
+        assert_eq!(std::fs::read_to_string(&jobs).unwrap(), "{\"jobs\": []}");
+        use std::os::unix::fs::MetadataExt as _;
+        assert_eq!(std::fs::metadata(&jobs).unwrap().nlink(), 1);
+        assert_eq!(std::fs::metadata(&outside).unwrap().nlink(), 1);
+        let config = home.join("config.yaml");
+        std::os::unix::fs::symlink(&outside, &config).unwrap();
+        write_owned(&config, "model: x\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "planted");
+        assert!(!config.symlink_metadata().unwrap().file_type().is_symlink());
+        let elsewhere = dir.path().join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, home.join("hooks")).unwrap();
+        assert!(write_owned(&home.join("hooks/x.yaml"), "x").is_err());
+        assert!(!elsewhere.join("x.yaml").exists());
+        // No temporary file is left behind.
+        let left: Vec<_> = std::fs::read_dir(home.join("cron"))
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name())
+            .collect();
+        assert_eq!(left.len(), 1, "{left:?}");
+    }
 
     #[test]
     fn a_planted_env_and_profile_are_gone_after_a_start() {
@@ -406,11 +483,21 @@ mod tests {
             "logs/gateway.err",
             "sessions/sessions.json",
             "workspace/uploads/report.pdf.txt",
-            "cache/hard",
             "state.db",
         ] {
             assert!(home.join(gone).symlink_metadata().is_err(), "{gone} kept");
         }
+        // A second name is gone, or cut from its file (this home is also
+        // the shared one, whose first start cuts it and keeps the contents).
+        use std::os::unix::fs::MetadataExt as _;
+        assert!(home
+            .join("cache/hard")
+            .symlink_metadata()
+            .map_or(true, |meta| meta.nlink() == 1));
+        assert_eq!(
+            std::fs::metadata(outside.join("target")).unwrap().nlink(),
+            1
+        );
         // The person's own links in the workspace stay.
         assert!(home
             .join("workspace/project-link")

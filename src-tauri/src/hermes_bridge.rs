@@ -235,6 +235,7 @@ Your environment: sessions run by default inside a macOS kernel sandbox (Seatbel
 - Your own settings are read-only to you: your configuration, environment file, installed skills, saved memories, scheduled routines, plugins and the runtime itself. Other parts of Sub Rosa run them outside this sandbox, so a sandboxed session may not change them. When a write there fails with "operation not permitted", do not look for another way in: tell the user what to change, and that they change it in Sub Rosa's Settings (skills, connectors, tools) or in Routines. Sub Rosa remembers facts about the user through its own memory, which works in every session.
 - The user can also give a session a working folder: when a "Working folder for this session" line appears in your environment notes, that folder is your current directory and the jail explicitly allows writes inside it (credential stores stay blocked). Work on the user's files there directly. Without that line, no user folder is writable.
 - Reads stay broad so you can work with the user's files, except credential stores (~/.ssh, ~/.aws, ~/.gnupg, keychains, .netrc), which are blocked.
+- You cannot open anything on the user's screen or reach their other apps: opening a link, a file or an application (`open`, a browser, `osascript`, Shortcuts), the clipboard, notifications, screenshots and simulated keys or clicks are all refused. When the user should open something, give them the link or the path in your reply and let them open it.
 - When a command fails with "operation not permitted" on a write outside your area, that is the sandbox working as designed. Don't retry or look for workarounds: produce the file in your workspace and tell the user where it is, or ask them to do that one step. If the user wants you to write outside the jail, they can start a new session in Unrestricted mode.
 - If the user asks whether you can damage their system, answer honestly: in a sandboxed session, destructive writes outside your workspace are blocked at the kernel level, not just by policy; in an Unrestricted session that protection is off because they chose to turn it off.
 "#;
@@ -269,7 +270,7 @@ Agent CLIs (Claude Code, Codex, Gemini, opencode): the user enabled Agent CLI ac
 /// carries the definitive answer for every session it runs. Without it the
 /// agent has to guess and tends to assume the sandboxed default even in
 /// Unrestricted sessions.
-const JUNE_HINT_SANDBOXED: &str = "Sandbox status for this session: Sandboxed. The Sub Rosa app's macOS Seatbelt write-jail is active for this process and every subprocess you start; writes outside your own area are denied by the kernel.";
+const JUNE_HINT_SANDBOXED: &str = "Sandbox status for this session: Sandboxed. The Sub Rosa app's macOS Seatbelt write-jail is active for this process and every subprocess you start; writes outside your own area are denied by the kernel. You cannot open links, files or applications, use the clipboard or control other apps: give the user the link or the path instead.";
 const JUNE_HINT_UNRESTRICTED: &str = "Sandbox status for this session: Unrestricted. The user explicitly started this session with Sub Rosa's sandbox off, so no Seatbelt write-jail applies to this process: you can write anywhere the user's account can. Be deliberate with destructive operations, and do not describe this session as sandboxed.";
 
 /// Composes the per-spawn environment hint. The sandbox-status line appears
@@ -463,6 +464,10 @@ struct HermesRuntimeOwnershipRecord {
     runtime_pid: u32,
     runtime_start: String,
     full_mode: bool,
+    /// The mark a jailed runtime's processes carry (`jail_reaper`), so a
+    /// later start can stop them too.
+    #[serde(default)]
+    jail_mark: Option<String>,
 }
 
 #[cfg(target_os = "macos")]
@@ -657,6 +662,9 @@ pub struct HermesMcpOauthLoginResult {
     pub message: Option<String>,
     pub auth_url: Option<String>,
     pub timed_out: bool,
+    /// The address is not on an origin the server declares: it was not
+    /// opened, the person decides (ADR-0140).
+    pub auth_url_unverified: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1262,6 +1270,11 @@ async fn start_hermes_bridge_inner(
     // Its own session, so teardown reaps the whole tree (JUN-338, see
     // `shutdown_hermes_process`) and the jail cannot join the app's group.
     sandbox_profile::own_session(&mut cmd);
+    // Everything a jailed runtime starts carries its mark (D5).
+    let jail_mark = sandboxed.then(jail_reaper::new_mark);
+    if let Some(mark) = &jail_mark {
+        cmd.env(jail_reaper::JAIL_MARK_ENV, mark);
+    }
 
     let mut child = cmd.spawn().map_err(|error| {
         AppError::new(
@@ -1269,6 +1282,9 @@ async fn start_hermes_bridge_inner(
             format!("Could not start the built-in agent runtime. {error}"),
         )
     })?;
+    if let Some(mark) = jail_mark {
+        jail_reaper::remember(child.id(), mark);
+    }
     // Persist ownership before any later operation can lose this Child handle.
     // If identity probing or the atomic write fails, this helper reaps the new
     // process group and returns the start error instead of leaving it untracked.
@@ -3525,43 +3541,6 @@ fn is_safe_mcp_server_name(name: &str) -> bool {
         .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
 }
 
-/// Builds the `hermes mcp login <server> --profile default` command, isolated to
-/// the connection's home/token, non-interactive, in the connection's mode. Pure
-/// (no spawn) so a test can assert the exact argument vector and that the server
-/// name is a discrete argument rather than shell-interpolated.
-fn build_hermes_mcp_login_command(
-    connection: &HermesBridgeConnection,
-    server: &str,
-    _profile: Option<&str>,
-    jail: Option<&Path>,
-) -> Command {
-    // Each side signs in on its own home (ADR-0140): a sandboxed sign-in runs
-    // under the jail and keeps its tokens there; none is copied across.
-    let hermes_home = session_owner::Owner::of_mode(connection.full_mode)
-        .home(Path::new(&connection.hermes_home));
-    let mut cmd = match jail {
-        Some(profile) => {
-            let mut cmd = Command::new(SANDBOX_EXEC_PATH);
-            cmd.arg("-f").arg(profile).arg(&connection.command);
-            cmd
-        }
-        None => Command::new(&connection.command),
-    };
-    cmd.args(["mcp", "login", server]);
-    // Always the default profile, whatever the webview asked (ADR-0140): the
-    // app provisions no other, and another one's home is not the app's.
-    cmd.args([HERMES_PROFILE_FLAG, HERMES_DEFAULT_PROFILE]);
-    apply_isolated_hermes_env(&mut cmd, &hermes_home, &connection.token, None);
-    // Non-interactive: the CLI must print the authorization URL and not block on
-    // a terminal prompt June cannot answer. June opens the URL in the browser.
-    cmd.env("HERMES_NONINTERACTIVE", "1");
-    cmd.current_dir(&hermes_home);
-    cmd.stdin(Stdio::null());
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
-    cmd
-}
-
 /// Extracts the first http(s) authorization URL from CLI output. Returns the URL
 /// verbatim (token-free trimming happens on the TS side via `redactUrl`); pure
 /// so a test can pin it. Stops at whitespace so a trailing log word is not glued
@@ -3760,8 +3739,17 @@ pub async fn hermes_mcp_oauth_login(
             sandbox_profile::jail_engages(),
         )?
     };
-    let mut cmd =
-        build_hermes_mcp_login_command(&connection, &server, profile.as_deref(), jail.as_deref());
+    let mut cmd = mcp_login::build_hermes_mcp_login_command(
+        &connection,
+        &server,
+        profile.as_deref(),
+        jail.as_deref(),
+    );
+    let mark = cmd
+        .get_envs()
+        .find(|(key, _)| *key == jail_reaper::JAIL_MARK_ENV)
+        .and_then(|(_, value)| value)
+        .map(|value| value.to_string_lossy().into_owned());
 
     // Run the short-lived CLI off the async runtime with a bounded wait. We read
     // its piped output to find the authorization URL; we never persist it.
@@ -3772,7 +3760,11 @@ pub async fn hermes_mcp_oauth_login(
                 format!("Could not run `hermes mcp login`. {error}"),
             )
         })?;
-        wait_with_timeout(child, MCP_OAUTH_LOGIN_TIMEOUT)
+        let finished = wait_with_timeout(child, MCP_OAUTH_LOGIN_TIMEOUT);
+        if let Some(mark) = mark {
+            jail_reaper::reap_mark(&mark);
+        }
+        finished
     })
     .await
     .map_err(|error| {
@@ -3788,11 +3780,20 @@ pub async fn hermes_mcp_oauth_login(
     // sign-in. macOS only; on other platforms June surfaces the URL for a manual
     // open. The URL is a navigation target, not a credential, but it is still
     // redacted before display on the TS side.
+    // Only an address on the server's own origin, or one its metadata
+    // declares, opens by itself; any other is shown to the person (ADR-0140).
+    let mut auth_url_unverified = false;
     if let Some(url) = auth_url.as_deref() {
-        open_url_in_browser(url);
+        let home = home_split::shared_home(Path::new(&connection.hermes_home));
+        if mcp_oauth_origin::authorization_url_trusted(&home, &server, url).await {
+            open_url_in_browser(url);
+        } else {
+            auth_url_unverified = true;
+        }
     }
 
     Ok(HermesMcpOauthLoginResult {
+        auth_url_unverified,
         ok: mcp_login_succeeded(join.exit_success, &combined),
         message: redact_cli_message(&combined),
         // The browser was opened above with the real URL; the copy returned to
@@ -6003,6 +6004,7 @@ fn record_spawned_hermes_runtime_in_dir(
                 runtime_pid,
                 runtime_start,
                 full_mode,
+                jail_mark: jail_reaper::mark_of(runtime_pid),
             },
         )
     })();
@@ -6132,6 +6134,9 @@ fn reap_orphaned_hermes_runtimes_in_dir(directory: &Path) -> Result<(), AppError
             }
             HermesOwnershipAction::Reap => {
                 kill_process_group(record.runtime_pid);
+                if let Some(mark) = record.jail_mark.as_deref() {
+                    jail_reaper::reap_mark(mark);
+                }
                 if !wait_for_recorded_hermes_runtime_exit(
                     record.runtime_pid,
                     &record.runtime_start,
@@ -6194,6 +6199,9 @@ fn wait_for_recorded_hermes_runtime_exit(
 /// (`sandbox_profile::own_session`), whose pid is its group id.
 #[cfg(unix)]
 fn kill_process_group(pid: u32) {
+    // What a jailed runtime started outside its group, gathered while the
+    // parent links still lead there (ADR-0140, D5).
+    let doomed = jail_reaper::doomed_with(pid);
     let _ = Command::new("/bin/kill")
         .arg("-KILL")
         .arg(format!("-{pid}"))
@@ -6201,6 +6209,7 @@ fn kill_process_group(pid: u32) {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
+    doomed.kill();
 }
 
 async fn resolve_hermes_command(
@@ -8059,10 +8068,13 @@ use builtin_mcp::{
 pub mod guard;
 mod home_prep;
 pub(crate) mod home_split;
+mod jail_reaper;
 #[cfg(test)]
 #[cfg(target_os = "macos")]
 mod jail_runtime_tests;
 mod local_reads;
+mod mcp_login;
+mod mcp_oauth_origin;
 mod project_memory;
 mod provider_proxy;
 use provider_proxy::provider_models_body;
@@ -8209,6 +8221,7 @@ mod tests {
             runtime_pid,
             runtime_start: runtime_start.into(),
             full_mode,
+            jail_mark: None,
         }
     }
 
@@ -8305,6 +8318,7 @@ mod tests {
             runtime_pid: child.id(),
             runtime_start: hermes_test_started_at(child.id()),
             full_mode: false,
+            jail_mark: None,
         };
         let path = write_hermes_runtime_ownership_record(directory.path(), &record)
             .expect("write ownership record");
@@ -8627,60 +8641,6 @@ mod tests {
                 "4242"
             ]
         );
-    }
-
-    #[test]
-    fn mcp_login_command_passes_server_as_discrete_argument() {
-        let connection = oauth_test_connection();
-        let cmd = build_hermes_mcp_login_command(&connection, "linear", Some("work"), None);
-        let program = cmd.get_program().to_string_lossy().to_string();
-        let args: Vec<String> = cmd
-            .get_args()
-            .map(|a| a.to_string_lossy().to_string())
-            .collect();
-        assert_eq!(program, "/usr/local/bin/hermes");
-        // ADR-0140: whatever profile was asked, the default one.
-        assert_eq!(args, vec!["mcp", "login", "linear", "--profile", "default"]);
-    }
-
-    #[test]
-    fn mcp_login_command_names_the_default_profile_when_none() {
-        let connection = oauth_test_connection();
-        let cmd = build_hermes_mcp_login_command(&connection, "linear", None, None);
-        let args: Vec<String> = cmd
-            .get_args()
-            .map(|a| a.to_string_lossy().to_string())
-            .collect();
-        assert_eq!(args, vec!["mcp", "login", "linear", "--profile", "default"]);
-    }
-
-    /// ADR-0140 (F2): each side signs in on its own home, the sandboxed one
-    /// under the jail; no sign-in is copied from one home to the other.
-    #[test]
-    fn mcp_login_signs_in_on_the_sessions_own_home() {
-        let home_of = |cmd: &Command| {
-            cmd.get_envs()
-                .find(|(key, _)| *key == "HERMES_HOME")
-                .and_then(|(_, value)| value)
-                .map(PathBuf::from)
-        };
-        let mut connection = oauth_test_connection();
-        connection.hermes_home = "/data/hermes-sandboxed".to_string();
-        let jailed = build_hermes_mcp_login_command(
-            &connection,
-            "linear",
-            None,
-            Some(Path::new("/data/reader.sb")),
-        );
-        assert_eq!(jailed.get_program(), SANDBOX_EXEC_PATH);
-        assert_eq!(
-            home_of(&jailed),
-            Some(PathBuf::from("/data/hermes-sandboxed"))
-        );
-        connection.full_mode = true;
-        let full = build_hermes_mcp_login_command(&connection, "linear", None, None);
-        assert_eq!(full.get_program(), "/usr/local/bin/hermes");
-        assert_eq!(home_of(&full), Some(PathBuf::from("/data/hermes")));
     }
 
     #[test]

@@ -2318,10 +2318,7 @@ async fn hermes_state_pool(path: &Path) -> Result<SqlitePool, AppError> {
     }
     // Read only, its schema distrusted: the sandboxed home's database is
     // written by the jail (ADR-0140).
-    let options = crate::hermes_bridge::session_owner::hardened_read_options(path);
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect_with(options)
+    let pool = crate::hermes_bridge::session_owner::hardened_pool(path, 1)
         .await
         .map_err(|error| AppError::new("hermes_state_unavailable", error.to_string()))?;
     cached.push((path.to_path_buf(), pool.clone()));

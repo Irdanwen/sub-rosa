@@ -244,8 +244,23 @@ pub(super) fn run_blocking(
     run_blocking_in(python, hermes_home, request, None)
 }
 
+/// Where a one-off run writes its answer: a jailed reader into a folder of
+/// the app's data only its profile may write, never the temp folder the
+/// sandboxed runtime shares (D5); the app's own run beside its script.
+fn answer_dir(hermes_home: &Path, jailed: bool) -> PathBuf {
+    if jailed {
+        super::sandbox_profile::reader_result_dir(hermes_home)
+    } else {
+        hermes_home
+            .parent()
+            .unwrap_or(hermes_home)
+            .join(JUNE_CONTEXT_MCP_DIR_NAME)
+    }
+}
+
 /// [`run_blocking`], under the Seatbelt profile at `jail` when given: the
-/// result then goes to the temp folder, the one place the jail may write it.
+/// result then goes to the reader's own folder of the app's data, the one
+/// place that profile may write it.
 pub(super) fn run_blocking_in(
     python: &str,
     hermes_home: &Path,
@@ -258,11 +273,11 @@ pub(super) fn run_blocking_in(
     let script = script_dir.join(ADMIN_SCRIPT_NAME);
     std::fs::write(&script, ADMIN_SCRIPT).map_err(|error| failed(error.to_string()))?;
     let token = random_token();
-    let out_dir = if jail.is_some() {
-        std::env::temp_dir()
-    } else {
-        script_dir.clone()
-    };
+    let out_dir = answer_dir(hermes_home, jail.is_some());
+    if jail.is_some() {
+        super::sandbox_profile::create_private_dir(&out_dir)
+            .map_err(|error| failed(error.to_string()))?;
+    }
     let out = out_dir.join(format!(
         "admin-result-{}.json",
         &token[..16.min(token.len())]
@@ -286,14 +301,21 @@ pub(super) fn run_blocking_in(
         Some((stdout, stderr)) => cmd.stdout(stdout).stderr(stderr),
         None => cmd.stdout(Stdio::null()).stderr(Stdio::null()),
     };
-    if jail.is_some() {
+    let mark = jail.map(|_| super::jail_reaper::new_mark());
+    if let Some(mark) = &mark {
         super::sandbox_profile::own_session(&mut cmd);
+        cmd.env(super::jail_reaper::JAIL_MARK_ENV, mark);
     }
     let mut child = cmd.spawn().map_err(|error| failed(error.to_string()))?;
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(request.to_string().as_bytes());
     }
-    let finished = wait_with_timeout(child, ADMIN_TIMEOUT)?;
+    let finished = wait_with_timeout(child, ADMIN_TIMEOUT);
+    // Nothing the jailed reader started outlives it.
+    if let Some(mark) = &mark {
+        super::jail_reaper::reap_mark(mark);
+    }
+    let finished = finished?;
     let text = std::fs::read_to_string(&out);
     let _ = std::fs::remove_file(&out);
     if finished.timed_out {
@@ -384,6 +406,16 @@ fn failed(detail: String) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ADR-0140 (D5): a jailed reader's answer is never in the temp folder
+    /// the sandboxed runtime shares.
+    #[test]
+    fn the_jailed_readers_answer_is_not_in_the_shared_temp() {
+        let home = Path::new("/data/app/hermes-sandboxed");
+        let answers = answer_dir(home, true);
+        assert_eq!(answers, Path::new("/data/app/hermes-reader-results"));
+        assert!(!answers.starts_with(std::env::temp_dir()));
+    }
 
     #[test]
     fn settings_changes_run_outside_the_jail_and_the_rest_does_not() {
