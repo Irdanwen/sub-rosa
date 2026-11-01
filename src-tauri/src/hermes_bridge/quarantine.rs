@@ -124,6 +124,11 @@ pub struct QuarantineRecord {
     /// this start, still has to be restarted.
     #[serde(default)]
     pub restart_gateway: bool,
+    /// What the person has to do again after the split (ADR-0140), as codes
+    /// the notice words: `messaging`, `mcp_servers`, `task_boards`,
+    /// `routines`, `mcp_sign_in`, `workspace`.
+    #[serde(default)]
+    pub redo: Vec<String>,
 }
 
 /// Sets aside, once, what is not the app's. `date` names the folder.
@@ -140,6 +145,10 @@ pub(super) fn run_once(
     let data_dir = hermes_home.parent().unwrap_or(hermes_home);
     let dir = data_dir.join("quarantine").join(date);
     let mut aside = Aside::new(hermes_home, &dir);
+    // An installation from before the split: its conversations, and maybe
+    // its sign-ins, stay on the unrestricted side.
+    let upgraded = hermes_home.join("state.db").is_file();
+    let had_sign_ins = !entries_of(&hermes_home.join("mcp-tokens")).is_empty();
 
     for entry in WHOLE_ENTRIES {
         aside.take(entry)?;
@@ -156,14 +165,18 @@ pub(super) fn run_once(
         aside.note(routine)?;
     }
     // Read into prompts, not run: flagged for the person, left in place.
-    let bundled =
+    let manifest =
         std::fs::read_to_string(hermes_home.join("skills/.bundled_manifest")).unwrap_or_default();
-    let mut flagged = Vec::new();
-    for name in entries_of(&hermes_home.join("skills")) {
-        if !name.starts_with('.') && !bundled.contains(&name) {
-            flagged.push(format!("skills/{name}"));
-        }
-    }
+    let bundled = bundled_skill_names(&manifest);
+    let mut skills = Vec::new();
+    skill_dirs(&hermes_home.join("skills"), "skills", 0, &mut skills);
+    let mut flagged: Vec<String> = skills
+        .into_iter()
+        .filter(|relative| {
+            let name = relative.rsplit('/').next().unwrap_or(relative);
+            !bundled.contains(name)
+        })
+        .collect();
     for name in entries_of(&hermes_home.join("memories")) {
         if !name.ends_with(".lock") {
             flagged.push(format!("memories/{name}"));
@@ -182,13 +195,24 @@ pub(super) fn run_once(
         )?;
     }
 
+    let mut redo = redo_codes(&items, upgraded, had_sign_ins);
+    // What an earlier step of this start already had to say (a copy that
+    // failed) stays said.
+    if let Some(previous) = settings.quarantine.take() {
+        for code in previous.redo {
+            if !redo.contains(&code) {
+                redo.push(code);
+            }
+        }
+    }
     let record = QuarantineRecord {
         dir: dir.to_string_lossy().into_owned(),
         items: items.clone(),
+        // Nothing to say on a new installation with nothing there.
+        seen: items.is_empty() && flagged.is_empty() && redo.is_empty(),
         flagged,
-        // Nothing to say when nothing was there.
-        seen: items.is_empty(),
         restart_gateway: !items.is_empty(),
+        redo,
     };
     if !items.is_empty() {
         eprintln!(
@@ -216,6 +240,141 @@ pub(super) fn take_gateway_restart(hermes_home: &Path) -> bool {
     }
     record.restart_gateway = false;
     admin_settings::save(hermes_home, &settings).is_ok()
+}
+
+/// What the person has to do again, from what was set aside.
+fn redo_codes(items: &[String], upgraded: bool, had_sign_ins: bool) -> Vec<String> {
+    let any = |prefixes: &[&str]| {
+        items
+            .iter()
+            .any(|item| prefixes.iter().any(|prefix| item.starts_with(prefix)))
+    };
+    let mut redo = Vec::new();
+    if any(&["pairing", "platforms/pairing"]) {
+        redo.push("messaging");
+    }
+    if any(&["mcp-installs/"]) {
+        redo.push("mcp_servers");
+    }
+    if any(&["kanban"]) {
+        redo.push("task_boards");
+    }
+    if any(&["cron/"]) {
+        redo.push("routines");
+    }
+    if had_sign_ins {
+        redo.push("mcp_sign_in");
+    }
+    if upgraded {
+        redo.push("workspace");
+    }
+    redo.into_iter().map(str::to_string).collect()
+}
+
+/// The skill names the runtime installed itself, one `name:hash` per line.
+fn bundled_skill_names(manifest: &str) -> std::collections::HashSet<&str> {
+    manifest
+        .lines()
+        .filter_map(|line| line.split(':').next())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .collect()
+}
+
+/// Every skill folder (one holding a `SKILL.md`) under `dir`, categories
+/// included, relative to the home; links are never followed.
+fn skill_dirs(dir: &Path, relative: &str, depth: usize, out: &mut Vec<String>) {
+    for name in entries_of(dir) {
+        if name.starts_with('.') {
+            continue;
+        }
+        let path = dir.join(&name);
+        let is_dir = path
+            .symlink_metadata()
+            .map(|meta| meta.file_type().is_dir())
+            .unwrap_or(false);
+        if !is_dir {
+            continue;
+        }
+        let child = format!("{relative}/{name}");
+        if path.join("SKILL.md").symlink_metadata().is_ok() {
+            out.push(child);
+        } else if depth < 3 {
+            skill_dirs(&path, &child, depth + 1, out);
+        }
+    }
+}
+
+/// Puts back what was set aside, into the shared home the app writes from
+/// outside the jail, where nothing is there now; the gateway picks it up at
+/// its next start. Routines set aside go back into the routines list.
+/// Returns how many items came back.
+pub(super) fn restore(hermes_home: &Path) -> std::io::Result<usize> {
+    let mut settings = admin_settings::load(hermes_home);
+    let Some(record) = settings.quarantine.clone() else {
+        return Ok(0);
+    };
+    let dir = PathBuf::from(&record.dir);
+    let mut restored = 0;
+    for item in &record.items {
+        if item.contains('#') || !is_plain_relative(item) {
+            continue;
+        }
+        let from = dir.join(item);
+        let to = hermes_home.join(item);
+        if from.symlink_metadata().is_ok() && to.symlink_metadata().is_err() {
+            move_aside(&from, &to)?;
+            restored += 1;
+        }
+    }
+    restored += restore_routines(hermes_home, &dir)?;
+    if let Some(kept) = settings.quarantine.as_mut() {
+        kept.seen = true;
+        kept.restart_gateway |= restored > 0;
+    }
+    admin_settings::save(hermes_home, &settings)?;
+    Ok(restored)
+}
+
+/// A path relative to the home that names no parent and no root.
+fn is_plain_relative(item: &str) -> bool {
+    Path::new(item)
+        .components()
+        .all(|part| matches!(part, std::path::Component::Normal(_)))
+}
+
+fn restore_routines(hermes_home: &Path, dir: &Path) -> std::io::Result<usize> {
+    let aside = dir.join("cron/jobs-set-aside.json");
+    let Ok(text) = std::fs::read_to_string(&aside) else {
+        return Ok(0);
+    };
+    let removed: Vec<Value> = serde_json::from_str::<Value>(&text)
+        .ok()
+        .and_then(|value| value.get("jobs").and_then(Value::as_array).cloned())
+        .unwrap_or_default();
+    let path = hermes_home.join("cron").join("jobs.json");
+    let mut current: Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_else(|| serde_json::json!({ "jobs": [] }));
+    let Some(jobs) = current.get_mut("jobs").and_then(Value::as_array_mut) else {
+        return Ok(0);
+    };
+    let mut back = 0;
+    for job in removed {
+        let id = job.get("id").cloned();
+        if id.is_some() && !jobs.iter().any(|kept| kept.get("id") == id.as_ref()) {
+            jobs.push(job);
+            back += 1;
+        }
+    }
+    std::fs::create_dir_all(hermes_home.join("cron"))?;
+    super::home_prep::write_owned(
+        &path,
+        &serde_json::to_string_pretty(&current).unwrap_or_default(),
+    )?;
+    std::fs::remove_file(&aside)?;
+    Ok(back)
 }
 
 /// Moves one entry (a file, a folder, a link: never followed) aside.
@@ -274,29 +433,38 @@ fn set_aside_script_routines(hermes_home: &Path, dir: &Path) -> std::io::Result<
         .collect())
 }
 
-/// What the Settings show once: how many items were set aside, and where.
+/// What the app shows once after the split (ADR-0140): what was set aside
+/// and where, what was left in place but deserves a look, and what the
+/// person has to do again.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuarantineNotice {
     pub dir: String,
-    pub count: usize,
+    pub items: Vec<String>,
+    pub flagged: Vec<String>,
+    pub redo: Vec<String>,
 }
 
 fn record_home(app: &AppHandle) -> Result<PathBuf, AppError> {
     super::resolve_june_hermes_home(app)
 }
 
+fn notice_of(home: &Path) -> Option<QuarantineNotice> {
+    admin_settings::load(home)
+        .quarantine
+        .filter(|record| !record.seen)
+        .map(|record| QuarantineNotice {
+            dir: record.dir,
+            items: record.items,
+            flagged: record.flagged,
+            redo: record.redo,
+        })
+}
+
 /// The notice, while the person has not seen it.
 #[tauri::command]
 pub fn hermes_quarantine_notice(app: AppHandle) -> Result<Option<QuarantineNotice>, AppError> {
-    let home = record_home(&app)?;
-    Ok(admin_settings::load(&home)
-        .quarantine
-        .filter(|record| !record.seen && !record.items.is_empty())
-        .map(|record| QuarantineNotice {
-            count: record.items.len(),
-            dir: record.dir,
-        }))
+    Ok(notice_of(&record_home(&app)?))
 }
 
 /// The person has seen it.
@@ -309,6 +477,14 @@ pub fn dismiss_hermes_quarantine_notice(app: AppHandle) -> Result<(), AppError> 
     }
     admin_settings::save(&home, &settings)
         .map_err(|error| AppError::new("hermes_settings_failed", error.to_string()))
+}
+
+/// The person puts back what was set aside (it runs outside the sandbox
+/// again from the gateway's next start). Returns how many items came back.
+#[tauri::command]
+pub fn restore_hermes_quarantine(app: AppHandle) -> Result<usize, AppError> {
+    let home = record_home(&app)?;
+    restore(&home).map_err(|error| AppError::new("hermes_restore_failed", error.to_string()))
 }
 
 #[cfg(test)]
@@ -402,6 +578,56 @@ mod tests {
         plant(&home, "scripts/later.sh", "x\n");
         assert!(run_once(&home, "2026-11-01").unwrap().is_none());
         assert!(home.join("scripts/later.sh").exists());
+
+        // ADR-0140 (M4): the notice says what to do again and what to look
+        // at, then the person can put everything back.
+        let notice = notice_of(&home).unwrap();
+        for code in ["messaging", "mcp_servers", "task_boards", "routines"] {
+            assert!(notice.redo.contains(&code.to_string()), "{code}");
+        }
+        assert!(notice.flagged.contains(&"skills/planted".to_string()));
+        assert_eq!(notice.items, record.items);
+        let back = restore(&home).unwrap();
+        assert_eq!(back, record.items.len());
+        assert!(home.join("hooks/x/handler.py").exists());
+        assert!(home
+            .join("platforms/pairing/telegram-approved.json")
+            .exists());
+        let jobs: Value =
+            serde_json::from_str(&std::fs::read_to_string(home.join("cron/jobs.json")).unwrap())
+                .unwrap();
+        assert_eq!(jobs["jobs"].as_array().unwrap().len(), 3);
+        assert!(notice_of(&home).is_none());
+        // Back in the home, so the gateway is restarted to take them.
+        assert!(take_gateway_restart(&home));
+    }
+
+    /// ADR-0140 (F4): a skill is the runtime's own only when its exact name
+    /// is in the manifest, at any depth of category.
+    #[test]
+    fn a_skill_is_bundled_by_its_exact_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("hermes");
+        plant(&home, "skills/.bundled_manifest", "apple-notes:1\nplan:2\n");
+        plant(&home, "skills/apple/apple-notes/SKILL.md", "bundled");
+        plant(&home, "skills/apple/apple/SKILL.md", "added");
+        plant(&home, "skills/pla/SKILL.md", "added");
+        plant(&home, "skills/plan/SKILL.md", "bundled");
+        let record = run_once(&home, "2026-10-31").unwrap().unwrap();
+        assert_eq!(record.flagged, ["skills/apple/apple", "skills/pla"]);
+    }
+
+    #[test]
+    fn an_upgraded_installation_is_told_what_to_do_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("hermes");
+        plant(&home, "state.db", "");
+        plant(&home, "mcp-tokens/linear.json", "{}");
+        let record = run_once(&home, "2026-10-31").unwrap().unwrap();
+        assert!(record.items.is_empty() && !record.seen);
+        assert_eq!(record.redo, ["mcp_sign_in", "workspace"]);
+        assert_eq!(restore(&home).unwrap(), 0);
+        assert!(notice_of(&home).is_none());
     }
 
     #[test]

@@ -14,12 +14,14 @@
 //! conversation from before the split stays in the shared home, and is
 //! copied once into the sandboxed home so it continues in either mode.
 
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
 use crate::domain::types::AppError;
 
+use super::session_owner::{self, Owner};
 use super::{admin_once, admin_settings, hermes_connection_json, HermesBridgeConnection};
 
 /// The unrestricted runtime's and the gateway's home, beside the app data.
@@ -73,7 +75,36 @@ pub(crate) fn home_for_mode(app: &tauri::AppHandle, full_mode: bool) -> Result<P
 /// split continues in either mode. Data goes from the shared home to the
 /// jail's, never back. `VACUUM INTO` makes a consistent copy of a database
 /// another process may be using.
-pub(super) async fn migrate_once(sandboxed: &Path) -> Result<bool, AppError> {
+///
+/// A failure never stops the start (F5): it is logged, said once in the
+/// notice, and tried again at the next start while the sandboxed home has
+/// no database of its own. Until then the earlier conversations open from
+/// the shared home, where they still are.
+pub(super) async fn migrate_once(sandboxed: &Path) -> bool {
+    match copy_once(sandboxed).await {
+        Ok(copied) => copied,
+        Err(error) => {
+            eprintln!(
+                "hermes home: the conversations were not copied: {}",
+                error.message
+            );
+            let target = sandboxed.join("state.db");
+            if target.symlink_metadata().is_ok_and(|meta| meta.is_file()) {
+                let _ = std::fs::remove_file(&target);
+            }
+            let mut settings = admin_settings::load(sandboxed);
+            let record = settings.quarantine.get_or_insert_with(Default::default);
+            if !record.redo.iter().any(|code| code == "conversations") {
+                record.redo.push("conversations".to_string());
+            }
+            record.seen = false;
+            let _ = admin_settings::save(sandboxed, &settings);
+            false
+        }
+    }
+}
+
+async fn copy_once(sandboxed: &Path) -> Result<bool, AppError> {
     let shared = shared_home(sandboxed);
     let mut settings = admin_settings::load(sandboxed);
     if settings.sandboxed_home_seeded {
@@ -100,56 +131,26 @@ pub(super) async fn migrate_once(sandboxed: &Path) -> Result<bool, AppError> {
             .map_err(|error| AppError::new("hermes_home_migration_failed", error.to_string()))?;
         copied = true;
     }
+    settings = admin_settings::load(sandboxed);
     settings.sandboxed_home_seeded = true;
+    if let Some(record) = settings.quarantine.as_mut() {
+        record.redo.retain(|code| code != "conversations");
+    }
     admin_settings::save(sandboxed, &settings)
         .map_err(|error| AppError::new("hermes_home_migration_failed", error.to_string()))?;
     Ok(copied)
 }
 
-/// Copies an MCP server's sign-in from the shared home, where the app's
-/// command ran it, into the sandboxed home, whose runtime keeps it fresh in
-/// its own copy. One direction only: nothing of the jail's home reaches the
-/// shared one.
-pub(crate) fn copy_mcp_tokens(any_home: &Path, server: &str) {
-    let from = shared_home(any_home).join("mcp-tokens");
-    let to = sandboxed_home(any_home).join("mcp-tokens");
-    if std::fs::create_dir_all(&to).is_err() {
-        return;
-    }
-    for suffix in [".json", ".client.json", ".meta.json"] {
-        let name = format!("{server}{suffix}");
-        let source = from.join(&name);
-        if !source.is_file() {
-            continue;
-        }
-        let target = to.join(&name);
-        let _ = std::fs::remove_file(&target);
-        if let Err(error) = std::fs::copy(&source, &target) {
-            eprintln!("hermes mcp: could not copy the sign-in of {server}: {error}");
-        }
-    }
-}
-
-/// Which home a request is about.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Home {
-    Sandboxed,
-    Shared,
-}
-
-fn home_of(connection: &HermesBridgeConnection) -> Home {
-    if connection.full_mode {
-        Home::Shared
-    } else {
-        Home::Sandboxed
-    }
+fn home_of(connection: &HermesBridgeConnection) -> Owner {
+    Owner::of_mode(connection.full_mode)
 }
 
 /// A dashboard request, sent to the home it is about (ADR-0140). Sessions
-/// span both homes: the list is merged, one session is read where it is,
-/// a deletion applies to both. Routines, messaging and the gateway are the
-/// shared home's. Everything else (skills, tools, servers) goes to the
-/// first live runtime, sandboxed first, as before.
+/// span both homes: the list is merged, one session is read and written in
+/// the home that owns it (`session_owner`) and nowhere else, a deletion
+/// applies to both. Routines, messaging and the gateway are the shared
+/// home's. Everything else (skills, tools, servers) goes to the first live
+/// runtime, sandboxed first, as before.
 pub(super) async fn api_json(
     connections: &[HermesBridgeConnection],
     method: reqwest::Method,
@@ -171,50 +172,37 @@ pub(super) async fn api_json(
         ["api", "sessions", ..] if method == reqwest::Method::DELETE => {
             let sandboxed = on_home(
                 connections,
-                Home::Sandboxed,
+                Owner::Sandboxed,
                 method.clone(),
                 path,
                 body.clone(),
             )
             .await;
-            let shared = on_home(connections, Home::Shared, method, path, body).await;
+            let shared = on_home(connections, Owner::Shared, method, path, body).await;
             match (sandboxed, shared) {
                 (Ok(value), _) | (Err(_), Ok(value)) => Ok(value),
                 (Err(error), Err(_)) => Err(error),
             }
         }
-        ["api", "sessions", ..] => {
-            match on_home(
-                connections,
-                Home::Sandboxed,
-                method.clone(),
-                path,
-                body.clone(),
-            )
-            .await
-            {
-                Err(error) if not_found(&error) => {
-                    on_home(connections, Home::Shared, method, path, body).await
-                }
-                other => other,
-            }
+        ["api", "sessions", id, ..] => {
+            let id = urlencoding::decode(id)
+                .map(|id| id.into_owned())
+                .unwrap_or_else(|_| (*id).to_string());
+            let owner = session_owner::owner_of(Path::new(&first.hermes_home), &id).await;
+            on_home(connections, owner, method, path, body).await
         }
         ["api", "cron", ..] | ["api", "messaging", ..] => {
-            on_home(connections, Home::Shared, method, path, body).await
+            on_home(connections, Owner::Shared, method, path, body).await
         }
         _ => hermes_connection_json(first, method, path, body).await,
     }
-}
-
-fn not_found(error: &AppError) -> bool {
-    error.code == "hermes_bridge_api_failed" && error.message.starts_with("Hermes API returned 404")
 }
 
 /// One request on one home: its live runtime when there is one, otherwise a
 /// one-off process of the app (under the jail, for the sandboxed home).
 async fn on_home(
     connections: &[HermesBridgeConnection],
-    home: Home,
+    home: Owner,
     method: reqwest::Method,
     path: &str,
     body: Option<Value>,
@@ -230,7 +218,7 @@ async fn on_home(
     };
     // A settings change (a routine, a messaging platform) is the app's, on
     // the shared home, whichever runtime is up.
-    if home == Home::Shared && admin_once::runs_outside_jail(&method, path) {
+    if home == Owner::Shared && admin_once::runs_outside_jail(&method, path) {
         return admin_once::run(any, method, path, body).await;
     }
     let Some(any) = connections.first() else {
@@ -241,14 +229,11 @@ async fn on_home(
     };
     let any_home = PathBuf::from(&any.hermes_home);
     let (dir, jail) = match home {
-        Home::Shared => (shared_home(&any_home), None),
-        Home::Sandboxed => {
-            let dir = sandboxed_home(&any_home);
-            // The profile the last sandboxed runtime ran under: a reader of
-            // the jail's home runs under the jail too.
-            let profile = data_dir(&any_home).join("hermes-sandbox.sb");
-            (dir, profile.is_file().then_some(profile))
-        }
+        Owner::Shared => (shared_home(&any_home), None),
+        Owner::Sandboxed => (
+            sandboxed_home(&any_home),
+            reader_jail(&any_home, super::sandbox_profile::jail_engages())?,
+        ),
     };
     if !dir.is_dir() {
         return Err(AppError::new(
@@ -262,10 +247,35 @@ async fn on_home(
     admin_once::read_on(&any.command, &dir, jail, method, path, body).await
 }
 
+/// The jail a one-off reader of the sandboxed home runs under (ADR-0140):
+/// its own fresh profile, without the working folder or the agent CLI state
+/// of the last session. Where sandboxed processes run jailed, a reader
+/// without that profile does not run at all: it fails closed, never reading
+/// the jail's home from outside the jail. Where they do not (another system,
+/// the debugging switch), the runtime itself has no jail to keep.
+pub(super) fn reader_jail(
+    any_home: &Path,
+    jail_engages: bool,
+) -> Result<Option<PathBuf>, AppError> {
+    if !jail_engages {
+        return Ok(None);
+    }
+    let profile = data_dir(any_home).join(super::sandbox_profile::READER_PROFILE_FILE);
+    if profile.is_file() {
+        Ok(Some(profile))
+    } else {
+        Err(AppError::new(
+            "hermes_sandboxed_reader_unavailable",
+            "The sandboxed conversations cannot be read until the assistant starts once.",
+        ))
+    }
+}
+
 /// The session list of both homes, merged: each is asked for the first
-/// `offset + limit` sessions, a session present in both (copied at the
-/// split) counts once, under its latest activity, and the page is cut from
-/// the merge.
+/// `offset + limit` sessions, each session is kept from the home that owns
+/// it only (`session_owner`: a copy made at the split, or one the jail
+/// wrote under another home's identifier, is never shown), and the page is
+/// cut from the merge.
 async fn merged_sessions(
     connections: &[HermesBridgeConnection],
     path: &str,
@@ -287,9 +297,9 @@ async fn merged_sessions(
     let recent = !kept.iter().any(|pair| pair == "order=created");
     let mut pages = Vec::new();
     let mut last_error = None;
-    for home in [Home::Sandboxed, Home::Shared] {
+    for home in [Owner::Sandboxed, Owner::Shared] {
         match on_home(connections, home, reqwest::Method::GET, &each, None).await {
-            Ok(value) => pages.push(value),
+            Ok(value) => pages.push((home, value)),
             Err(error) => last_error = Some(error),
         }
     }
@@ -298,11 +308,52 @@ async fn merged_sessions(
             AppError::new("hermes_bridge_not_running", "Hermes bridge is not running.")
         }));
     }
-    Ok(merge_session_pages(&pages, limit, offset, recent))
+    let any_home = connections
+        .first()
+        .map(|connection| PathBuf::from(&connection.hermes_home))
+        .unwrap_or_default();
+    let ids_of = |wanted: Owner| -> Vec<String> {
+        pages
+            .iter()
+            .filter(|(home, _)| *home == wanted)
+            .flat_map(|(_, page)| session_ids(page))
+            .collect()
+    };
+    let mut in_shared: HashSet<String> = ids_of(Owner::Shared).into_iter().collect();
+    let unknown = ids_of(Owner::Sandboxed);
+    let unknown: Vec<&str> = unknown
+        .iter()
+        .map(String::as_str)
+        .filter(|id| !in_shared.contains(*id))
+        .collect();
+    in_shared.extend(session_owner::in_shared_home(&any_home, &unknown).await);
+    let all: Vec<String> = pages
+        .iter()
+        .flat_map(|(_, page)| session_ids(page))
+        .collect();
+    let owners = session_owner::owners_of(&any_home, all.iter().map(String::as_str), &in_shared);
+    Ok(merge_session_pages(&pages, &owners, limit, offset, recent))
 }
 
-/// Pure merge of `{"sessions": [...], "total": n}` pages (also tested).
-fn merge_session_pages(pages: &[Value], limit: usize, offset: usize, recent: bool) -> Value {
+fn session_ids(page: &Value) -> Vec<String> {
+    page.get("sessions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|session| session.get("id").and_then(Value::as_str))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Pure merge of `{"sessions": [...], "total": n}` pages, each from one
+/// home, keeping each session from its owner only (also tested).
+fn merge_session_pages(
+    pages: &[(Owner, Value)],
+    owners: &BTreeMap<String, Owner>,
+    limit: usize,
+    offset: usize,
+    recent: bool,
+) -> Value {
     let stamp =
         |session: &Value, key: &str| session.get(key).and_then(Value::as_f64).unwrap_or(0.0);
     let order_key = |session: &Value| {
@@ -312,10 +363,10 @@ fn merge_session_pages(pages: &[Value], limit: usize, offset: usize, recent: boo
             stamp(session, "started_at")
         }
     };
-    let mut by_id: std::collections::BTreeMap<String, Value> = std::collections::BTreeMap::new();
-    let mut duplicates = 0u64;
+    let mut sessions: Vec<Value> = Vec::new();
+    let mut dropped = 0u64;
     let mut total = 0u64;
-    for page in pages {
+    for (home, page) in pages {
         total += page.get("total").and_then(Value::as_u64).unwrap_or(0);
         for session in page
             .get("sessions")
@@ -326,25 +377,18 @@ fn merge_session_pages(pages: &[Value], limit: usize, offset: usize, recent: boo
             let Some(id) = session.get("id").and_then(Value::as_str) else {
                 continue;
             };
-            match by_id.get(id) {
-                Some(existing) => {
-                    duplicates += 1;
-                    if stamp(session, "last_active") > stamp(existing, "last_active") {
-                        by_id.insert(id.to_string(), session.clone());
-                    }
-                }
-                None => {
-                    by_id.insert(id.to_string(), session.clone());
-                }
+            if owners.get(id) == Some(home) {
+                sessions.push(session.clone());
+            } else {
+                dropped += 1;
             }
         }
     }
-    let mut sessions: Vec<Value> = by_id.into_values().collect();
     sessions.sort_by(|a, b| order_key(b).total_cmp(&order_key(a)));
     let page: Vec<Value> = sessions.into_iter().skip(offset).take(limit).collect();
     serde_json::json!({
         "sessions": page,
-        "total": total.saturating_sub(duplicates),
+        "total": total.saturating_sub(dropped),
         "limit": limit,
         "offset": offset,
     })
@@ -409,38 +453,245 @@ mod tests {
             .any(|arg| arg.to_string_lossy().contains(SANDBOXED_HOME)));
     }
 
+    /// ADR-0140 (M3): one list from both homes, each conversation from the
+    /// home that owns it. The copy of the other home is not shown, a
+    /// routine's run or a conversation known as unrestricted never comes
+    /// from the jail's home, whatever that home claims.
     #[test]
-    fn one_list_of_conversations_from_both_homes() {
-        let sandboxed = json!({"total": 3, "sessions": [
+    fn one_list_of_conversations_each_from_its_owner() {
+        let sandboxed = json!({"total": 5, "sessions": [
             {"id": "a", "last_active": 50.0},
-            {"id": "old", "last_active": 40.0},
+            {"id": "old", "last_active": 40.0, "title": "continued sandboxed"},
+            {"id": "full", "last_active": 99.0, "title": "forged"},
+            {"id": "cron_job_1", "last_active": 98.0, "title": "forged"},
             {"id": "c", "last_active": 10.0}
         ]});
-        let shared = json!({"total": 2, "sessions": [
+        let shared = json!({"total": 3, "sessions": [
             {"id": "old", "last_active": 5.0},
-            {"id": "full", "last_active": 45.0}
+            {"id": "full", "last_active": 45.0, "title": "real"},
+            {"id": "cron_job_1", "last_active": 30.0, "title": "real"}
         ]});
-        let merged = merge_session_pages(&[sandboxed, shared], 3, 0, true);
+        let owners: BTreeMap<String, Owner> = [
+            ("a", Owner::Sandboxed),
+            ("old", Owner::Sandboxed),
+            ("full", Owner::Shared),
+            ("cron_job_1", Owner::Shared),
+            ("c", Owner::Sandboxed),
+        ]
+        .into_iter()
+        .map(|(id, owner)| (id.to_string(), owner))
+        .collect();
+        let pages = [(Owner::Sandboxed, sandboxed), (Owner::Shared, shared)];
+        let merged = merge_session_pages(&pages, &owners, 10, 0, true);
         let ids: Vec<&str> = merged["sessions"]
             .as_array()
             .unwrap()
             .iter()
             .map(|s| s["id"].as_str().unwrap())
             .collect();
-        assert_eq!(ids, ["a", "full", "old"]);
-        // The copy made at the split counts once, under its latest activity.
-        assert_eq!(merged["total"], 4);
-        assert_eq!(merged["sessions"][2]["last_active"], 40.0);
-        let next = merge_session_pages(
-            &[
-                json!({"total": 1, "sessions": [{"id": "a", "last_active": 1.0}]}),
-                json!({"total": 1, "sessions": [{"id": "b", "last_active": 2.0}]}),
-            ],
-            1,
-            1,
-            true,
-        );
-        assert_eq!(next["sessions"][0]["id"], "a");
+        assert_eq!(ids, ["a", "full", "old", "cron_job_1", "c"]);
+        assert_eq!(merged["sessions"][1]["title"], "real");
+        assert_eq!(merged["sessions"][2]["title"], "continued sandboxed");
+        assert_eq!(merged["sessions"][3]["title"], "real");
+        assert_eq!(merged["total"], 5);
+        let next = merge_session_pages(&pages, &owners, 1, 1, true);
+        assert_eq!(next["sessions"][0]["id"], "full");
+    }
+
+    /// ADR-0140 (M3): the owners the list and every read use. A routine's
+    /// run and a conversation the shared database has are the shared
+    /// home's unless the app recorded otherwise, and a routine never is.
+    #[tokio::test]
+    async fn the_owner_never_comes_from_the_jails_home() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join(SHARED_HOME);
+        std::fs::create_dir_all(&shared).unwrap();
+        let options = sqlx_sqlite::SqliteConnectOptions::new()
+            .filename(shared.join("state.db"))
+            .create_if_missing(true);
+        let mut db =
+            <sqlx_sqlite::SqliteConnection as sqlx::connection::Connection>::connect_with(&options)
+                .await
+                .unwrap();
+        sqlx::query::query("CREATE TABLE sessions (id TEXT PRIMARY KEY)")
+            .execute(&mut db)
+            .await
+            .unwrap();
+        for id in ["telegram_1", "resumed"] {
+            sqlx::query::query("INSERT INTO sessions VALUES (?)")
+                .bind(id)
+                .execute(&mut db)
+                .await
+                .unwrap();
+        }
+        session_owner::record(&shared, "resumed", Owner::Sandboxed).unwrap();
+        session_owner::record(&shared, "unrestricted", Owner::Shared).unwrap();
+        session_owner::record(&shared, "cron_j_1", Owner::Sandboxed).unwrap();
+        for (id, owner) in [
+            ("telegram_1", Owner::Shared),
+            ("resumed", Owner::Sandboxed),
+            ("unrestricted", Owner::Shared),
+            ("cron_j_1", Owner::Shared),
+            ("new", Owner::Sandboxed),
+        ] {
+            assert_eq!(session_owner::owner_of(&shared, id).await, owner, "{id}");
+        }
+    }
+
+    /// ADR-0140 (review 2, F1): a reader of the jail's home runs under its
+    /// own fresh profile, and without one it does not run at all.
+    #[test]
+    fn the_reader_of_the_jails_home_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join(SHARED_HOME);
+        let error = reader_jail(&shared, true).unwrap_err();
+        assert_eq!(error.code, "hermes_sandboxed_reader_unavailable");
+        // The runtime's own profile (with its working folder) is not taken.
+        std::fs::write(
+            dir.path()
+                .join(super::super::sandbox_profile::RUNTIME_PROFILE_FILE),
+            "(version 1)",
+        )
+        .unwrap();
+        assert!(reader_jail(&shared, true).is_err());
+        let reader = dir
+            .path()
+            .join(super::super::sandbox_profile::READER_PROFILE_FILE);
+        std::fs::write(&reader, "(version 1)").unwrap();
+        assert_eq!(reader_jail(&shared, true).unwrap(), Some(reader));
+        assert_eq!(reader_jail(&shared, false).unwrap(), None);
+    }
+
+    /// ADR-0140 (F5): a copy that fails does not stop the start, is said
+    /// once, and is tried again at the next start.
+    #[tokio::test]
+    async fn a_failed_copy_is_said_and_tried_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join(SHARED_HOME);
+        let sandboxed = dir.path().join(SANDBOXED_HOME);
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::create_dir_all(&sandboxed).unwrap();
+        std::fs::write(shared.join("state.db"), "not a database").unwrap();
+        assert!(!migrate_once(&sandboxed).await);
+        let settings = admin_settings::load(&sandboxed);
+        assert!(!settings.sandboxed_home_seeded);
+        let record = settings.quarantine.unwrap();
+        assert!(record.redo.contains(&"conversations".to_string()) && !record.seen);
+        assert!(sandboxed.join("state.db").symlink_metadata().is_err());
+        // Next start, the shared database readable again: copied.
+        std::fs::remove_file(shared.join("state.db")).unwrap();
+        let options = sqlx_sqlite::SqliteConnectOptions::new()
+            .filename(shared.join("state.db"))
+            .create_if_missing(true);
+        let mut db =
+            <sqlx_sqlite::SqliteConnection as sqlx::connection::Connection>::connect_with(&options)
+                .await
+                .unwrap();
+        sqlx::query::query("CREATE TABLE sessions (id TEXT PRIMARY KEY)")
+            .execute(&mut db)
+            .await
+            .unwrap();
+        assert!(migrate_once(&sandboxed).await);
+        let settings = admin_settings::load(&sandboxed);
+        assert!(settings.sandboxed_home_seeded);
+        assert!(!settings
+            .quarantine
+            .unwrap()
+            .redo
+            .contains(&"conversations".to_string()));
+    }
+
+    /// A sandboxed runtime that answers anything with a forged body, and
+    /// says whether it was asked.
+    fn forged_sandboxed_runtime(
+        data: &Path,
+    ) -> (
+        HermesBridgeConnection,
+        std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) {
+        use std::io::{Read as _, Write as _};
+        let sandboxed = data.join(SANDBOXED_HOME);
+        std::fs::create_dir_all(&sandboxed).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let asked = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = asked.clone();
+        std::thread::spawn(move || {
+            while let Ok((mut stream, _)) = listener.accept() {
+                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                let mut buffer = [0u8; 4096];
+                let _ = stream.read(&mut buffer);
+                let body = r#"{"jobs":[{"id":"forged"}],"messages":[{"role":"assistant","content":"forged"}]}"#;
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            }
+        });
+        let connection = HermesBridgeConnection {
+            base_url: format!("http://127.0.0.1:{port}"),
+            ws_url: format!("ws://127.0.0.1:{port}/api/ws"),
+            token: "t".to_string(),
+            port,
+            command: "/usr/bin/false".to_string(),
+            hermes_home: sandboxed.to_string_lossy().into_owned(),
+            cwd: None,
+            working_dir: None,
+            provider_proxy_port: 2,
+            pid: 3,
+            sandboxed: true,
+            full_mode: false,
+        };
+        (connection, asked)
+    }
+
+    fn forged(result: &Result<Value, AppError>) -> bool {
+        result
+            .as_ref()
+            .is_ok_and(|value| value.to_string().contains("forged"))
+    }
+
+    /// ADR-0140 (M2): the routines are read from the shared home, never
+    /// from the sandboxed runtime, even when it is the only one up.
+    #[tokio::test]
+    async fn the_routines_are_never_read_from_the_jail() {
+        let dir = tempfile::tempdir().unwrap();
+        let (connection, asked) = forged_sandboxed_runtime(dir.path());
+        let jobs = super::super::cron_jobs_of(std::slice::from_ref(&connection)).await;
+        assert!(!forged(&jobs), "{jobs:?}");
+        assert!(!asked.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    /// ADR-0140 (M3): a conversation is read from its owner only. One the
+    /// app knows as unrestricted, or a routine's run, is never asked of the
+    /// sandboxed runtime; one of the jail's is.
+    #[tokio::test]
+    async fn a_conversation_is_read_from_its_owner_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let (connection, asked) = forged_sandboxed_runtime(dir.path());
+        let shared = dir.path().join(SHARED_HOME);
+        session_owner::record(&shared, "full", Owner::Shared).unwrap();
+        let connections = std::slice::from_ref(&connection);
+        for id in ["full", "cron_job_1"] {
+            let read = api_json(
+                connections,
+                reqwest::Method::GET,
+                &format!("/api/sessions/{id}/messages"),
+                None,
+            )
+            .await;
+            assert!(!forged(&read), "{id}: {read:?}");
+            assert!(!asked.load(std::sync::atomic::Ordering::SeqCst), "{id}");
+        }
+        let own = api_json(
+            connections,
+            reqwest::Method::GET,
+            "/api/sessions/jail-own/messages",
+            None,
+        )
+        .await;
+        assert!(forged(&own), "{own:?}");
     }
 
     #[tokio::test]
@@ -465,7 +716,7 @@ mod tests {
             .execute(&mut db)
             .await
             .unwrap();
-        assert!(migrate_once(&sandboxed).await.unwrap());
+        assert!(migrate_once(&sandboxed).await);
         let options = sqlx_sqlite::SqliteConnectOptions::new()
             .filename(sandboxed.join("state.db"))
             .read_only(true);
@@ -484,7 +735,7 @@ mod tests {
             .execute(&mut db)
             .await
             .unwrap();
-        assert!(!migrate_once(&sandboxed).await.unwrap());
+        assert!(!migrate_once(&sandboxed).await);
         let count: (i64,) = sqlx::query_as::query_as("SELECT count(*) FROM sessions")
             .fetch_one(&mut copy)
             .await

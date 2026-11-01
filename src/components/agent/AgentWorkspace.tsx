@@ -321,8 +321,10 @@ import {
   type ReportCategory,
 } from "./composer/reportCategory";
 import { hermesConnectionForMode } from "../../lib/hermes-connection";
+import { filesystemRootWords } from "./filesystem-root-words";
 import {
   forgetSessionMode,
+  recordSessionHome,
   rememberSessionMode,
   sessionUnrestricted,
 } from "../../lib/agent-session-modes";
@@ -5410,8 +5412,11 @@ export function AgentWorkspace({
     let sessionGone = false;
     try {
       const resumed = await resume(gateway);
-      if (resumed)
+      if (resumed) {
+        // The home it was resumed in owns it from now on (ADR-0140).
+        recordSessionHome(storedSessionId, sessionUnrestricted(storedSessionId));
         return { gateway, runtimeSessionId: rememberRuntimeSessionId(storedSessionId, resumed) };
+      }
     } catch (err) {
       if (!isSessionGoneError(messageFromError(err))) throw err;
       sessionGone = true;
@@ -9240,6 +9245,7 @@ export function FilesystemPanel({
   const roots = (snapshot?.roots ?? [])
     .map((root) => ({
       ...root,
+      ...filesystemRootWords(root),
       entries: filterFilesystemEntries(root.entries, q),
     }))
     .filter(

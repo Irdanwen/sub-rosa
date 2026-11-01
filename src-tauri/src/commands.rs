@@ -2120,33 +2120,7 @@ pub(crate) async fn hydrate_agent_task_from_hermes(
     crate::assistants::general::ensure_general_continuation(&repos.pool, task_id).await?;
     let task = repos.get_agent_task(task_id).await?;
     let paths = app_paths(app)?;
-    // A session lives in the home of its mode (ADR-0140): the sandboxed one
-    // first, where most are, read as data.
-    let mut found = None;
-    for home in ["hermes-sandboxed", "hermes"] {
-        let hermes_db_path = paths.data_dir.join(home).join("state.db");
-        if !hermes_db_path.exists() {
-            continue;
-        }
-        let pool = hermes_state_pool(&hermes_db_path).await?;
-        let session_id = match task.hermes_session_id.clone() {
-            Some(session_id) if !session_id.trim().is_empty() => {
-                let present = query("SELECT 1 FROM sessions WHERE id = ? LIMIT 1")
-                    .bind(&session_id)
-                    .fetch_optional(&pool)
-                    .await
-                    .ok()
-                    .flatten()
-                    .is_some();
-                present.then_some(session_id)
-            }
-            _ => match_hermes_session_for_task(repos, &pool, &task).await?,
-        };
-        if let Some(session_id) = session_id {
-            found = Some((pool, session_id));
-            break;
-        }
-    }
+    let found = find_hermes_session(repos, &task, &paths.data_dir).await?;
     let Some((pool, session_id)) = found else {
         return Ok(());
     };
@@ -2221,8 +2195,60 @@ pub(crate) async fn hydrate_agent_task_from_hermes(
     Ok(())
 }
 
+/// The Hermes session of a task and the database it is read from. A session
+/// is read in the home that owns it, and only there (ADR-0140,
+/// `session_owner`): a known session from its owner, an unbound task from
+/// the one home where its title matches and which owns that match.
+#[cfg(desktop)]
+async fn find_hermes_session(
+    repos: &Repositories,
+    task: &AgentTaskDto,
+    data_dir: &Path,
+) -> Result<Option<(SqlitePool, String)>, AppError> {
+    use crate::hermes_bridge::session_owner::{owner_of, Owner};
+    let shared_home = data_dir.join(Owner::Shared.dir_name());
+    let mut found = None;
+    match task.hermes_session_id.clone() {
+        Some(session_id) if !session_id.trim().is_empty() => {
+            let owner = owner_of(&shared_home, &session_id).await;
+            let hermes_db_path = owner.home(&shared_home).join("state.db");
+            if hermes_db_path.exists() {
+                found = Some((hermes_state_pool(&hermes_db_path).await?, session_id));
+            }
+        }
+        _ => {
+            for home in [Owner::Sandboxed, Owner::Shared] {
+                let hermes_db_path = home.home(&shared_home).join("state.db");
+                if !hermes_db_path.exists() {
+                    continue;
+                }
+                let pool = hermes_state_pool(&hermes_db_path).await?;
+                let Some(session_id) =
+                    match_hermes_session_for_task(repos, &pool, task, home, &shared_home).await?
+                else {
+                    continue;
+                };
+                found = Some((pool, session_id));
+                break;
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// The phone has no Hermes runtime.
+#[cfg(mobile)]
+async fn find_hermes_session(
+    _repos: &Repositories,
+    _task: &AgentTaskDto,
+    _data_dir: &Path,
+) -> Result<Option<(SqlitePool, String)>, AppError> {
+    Ok(None)
+}
+
 /// How close (in seconds) a Hermes session's `started_at` must be to the
 /// task's creation time for heuristic title matching to bind them.
+#[cfg(desktop)]
 const HERMES_SESSION_MATCH_WINDOW_SECONDS: f64 = 300.0;
 
 /// Heuristically binds a Hermes session to a task by title. Titles are
@@ -2231,10 +2257,13 @@ const HERMES_SESSION_MATCH_WINDOW_SECONDS: f64 = 300.0;
 /// the task's creation time and it is not already bound to another task.
 /// When the match is ambiguous, skip hydration for this poll instead of
 /// persisting a guess.
+#[cfg(desktop)]
 async fn match_hermes_session_for_task(
     repos: &Repositories,
     pool: &SqlitePool,
     task: &AgentTaskDto,
+    home: crate::hermes_bridge::session_owner::Owner,
+    shared_home: &Path,
 ) -> Result<Option<String>, AppError> {
     let Ok(task_started_at) = chrono::DateTime::parse_from_rfc3339(&task.created_at)
         .map(|value| value.timestamp_millis() as f64 / 1000.0)
@@ -2258,6 +2287,10 @@ async fn match_hermes_session_for_task(
         return Ok(None);
     }
     let session_id: String = rows[0].get("id");
+    // A match is bound only in the home that owns it (ADR-0140).
+    if crate::hermes_bridge::session_owner::owner_of(shared_home, &session_id).await != home {
+        return Ok(None);
+    }
     if repos
         .hermes_session_bound_to_other_task(&task.id, &session_id)
         .await?
@@ -2272,18 +2305,20 @@ async fn match_hermes_session_for_task(
 
 /// Cached read pool for the Hermes `state.db`, re-opened only if the path
 /// changes, so per-task polling does not open a fresh pool every second.
+#[cfg(desktop)]
 static HERMES_STATE_POOL: tokio::sync::Mutex<Vec<(PathBuf, SqlitePool)>> =
     tokio::sync::Mutex::const_new(Vec::new());
 
+#[cfg(desktop)]
 async fn hermes_state_pool(path: &Path) -> Result<SqlitePool, AppError> {
     let mut cached = HERMES_STATE_POOL.lock().await;
     cached.retain(|(_, pool)| !pool.is_closed());
     if let Some((_, pool)) = cached.iter().find(|(cached_path, _)| cached_path == path) {
         return Ok(pool.clone());
     }
-    let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
-        .map_err(|error| AppError::new("hermes_state_unavailable", error.to_string()))?
-        .create_if_missing(false);
+    // Read only, its schema distrusted: the sandboxed home's database is
+    // written by the jail (ADR-0140).
+    let options = crate::hermes_bridge::session_owner::hardened_read_options(path);
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
         .connect_with(options)

@@ -430,6 +430,8 @@ pub fn run() {
             hermes_bridge::set_hermes_agent_cli_access,
             hermes_bridge::quarantine::hermes_quarantine_notice,
             hermes_bridge::quarantine::dismiss_hermes_quarantine_notice,
+            hermes_bridge::quarantine::restore_hermes_quarantine,
+            hermes_bridge::session_owner::hermes_record_session_home,
             hermes_bridge::open_hermes_tui_debug,
             commands::get_microphone_permission_state,
             commands::check_recording_source_readiness,

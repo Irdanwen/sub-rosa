@@ -33,7 +33,7 @@ const JUNE_HERMES_COMMAND_ENV: &str = "JUNE_HERMES_COMMAND";
 // agent able to write anywhere the user can, so only flip it knowingly.
 const JUNE_HERMES_DISABLE_SANDBOX_ENV: &str = "JUNE_HERMES_DISABLE_SANDBOX";
 // Referenced by the spawn match arm on every target; only ever reached when
-// `prepare_sandbox` returns a profile, which it only does on macOS.
+// `sandbox_profile::prepare` returns a profile, which it only does on macOS.
 const SANDBOX_EXEC_PATH: &str = "/usr/bin/sandbox-exec";
 // Hermes Agent v0.19.0 (v2026.7.20). See the matching upstream pin note for
 // the audited pin-to-tag compatibility delta. (The fork bundles the pinned
@@ -1132,7 +1132,7 @@ async fn start_hermes_bridge_inner(
     let command = command_resolution.command;
     let _command_source = command_resolution.source;
     if !full_mode {
-        home_split::migrate_once(&hermes_home).await?;
+        home_split::migrate_once(&hermes_home).await;
     }
     let default_cwd = hermes_home.join("workspace");
     std::fs::create_dir_all(&default_cwd)
@@ -1186,13 +1186,14 @@ async fn start_hermes_bridge_inner(
     let sandbox_profile = if full_mode {
         None
     } else {
-        prepare_sandbox(
+        sandbox_profile::prepare(
             app,
             &hermes_home,
             agent_cli_access,
             custom_working_dir.as_deref(),
         )
     };
+    sandbox_profile::prepare_reader(app, &hermes_home);
     let sandboxed = sandbox_profile.is_some();
     // SOUL.md is shared by both processes (single home), so its sandbox
     // section describes the per-session mode split rather than this spawn.
@@ -1258,16 +1259,9 @@ async fn start_hermes_bridge_inner(
     apply_isolated_hermes_env(&mut cmd, &hermes_home, &token, environment_hint.as_deref());
     cmd.current_dir(&cwd);
 
-    // Put the runtime in its own process group so teardown can reap the whole
-    // tree, not just the tracked child. The dashboard (and, unsandboxed, the
-    // Python runtime it becomes) can fork worker subprocesses; a bare
-    // `child.kill()` would leave those orphaned when the app quits or relaunches
-    // for an update (JUN-338). See `shutdown_hermes_process`.
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt as _;
-        cmd.process_group(0);
-    }
+    // Its own session, so teardown reaps the whole tree (JUN-338, see
+    // `shutdown_hermes_process`) and the jail cannot join the app's group.
+    sandbox_profile::own_session(&mut cmd);
 
     let mut child = cmd.spawn().map_err(|error| {
         AppError::new(
@@ -2620,30 +2614,32 @@ fn cron_store_is_corrupt(hermes_home: &Path) -> bool {
 pub async fn hermes_bridge_cron_jobs(
     bridge: State<'_, HermesBridge>,
 ) -> Result<serde_json::Value, AppError> {
-    let connections = live_connections(&bridge)?;
-    let Some(connection) = connections.first() else {
+    cron_jobs_of(&live_connections(&bridge)?).await
+}
+
+/// The routines, from the shared home where the gateway runs them, whichever
+/// runtime is up (ADR-0140): never a list the sandboxed runtime answers.
+async fn cron_jobs_of(
+    connections: &[HermesBridgeConnection],
+) -> Result<serde_json::Value, AppError> {
+    let Some(first) = connections.first() else {
         return Err(AppError::new(
             "hermes_bridge_not_running",
             "Hermes bridge is not running.",
         ));
     };
-    let result = hermes_connection_json(
-        connection,
-        reqwest::Method::GET,
-        &format!("/api/cron/jobs?{CRON_PROFILE_QUERY}"),
-        None,
-    )
-    .await;
-    match result {
+    let shared = home_split::shared_home(Path::new(&first.hermes_home));
+    let path = format!("/api/cron/jobs?{CRON_PROFILE_QUERY}");
+    match home_split::api_json(connections, reqwest::Method::GET, &path, None).await {
         Err(error)
             if error.message.starts_with("Hermes API returned 500")
-                && cron_store_is_corrupt(Path::new(&connection.hermes_home)) =>
+                && cron_store_is_corrupt(&shared) =>
         {
             Err(AppError::new(
                 CRON_STORE_CORRUPTED_CODE,
                 format!(
                     "The routines database at {} is corrupted or unreadable.",
-                    cron_store_jobs_file(Path::new(&connection.hermes_home)).display()
+                    cron_store_jobs_file(&shared).display()
                 ),
             ))
         }
@@ -3537,9 +3533,20 @@ fn build_hermes_mcp_login_command(
     connection: &HermesBridgeConnection,
     server: &str,
     _profile: Option<&str>,
+    jail: Option<&Path>,
 ) -> Command {
-    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
-    let mut cmd = Command::new(&connection.command);
+    // Each side signs in on its own home (ADR-0140): a sandboxed sign-in runs
+    // under the jail and keeps its tokens there; none is copied across.
+    let hermes_home = session_owner::Owner::of_mode(connection.full_mode)
+        .home(Path::new(&connection.hermes_home));
+    let mut cmd = match jail {
+        Some(profile) => {
+            let mut cmd = Command::new(SANDBOX_EXEC_PATH);
+            cmd.arg("-f").arg(profile).arg(&connection.command);
+            cmd
+        }
+        None => Command::new(&connection.command),
+    };
     cmd.args(["mcp", "login", server]);
     // Always the default profile, whatever the webview asked (ADR-0140): the
     // app provisions no other, and another one's home is not the app's.
@@ -3745,7 +3752,16 @@ pub async fn hermes_mcp_oauth_login(
 
     let server = request.server.clone();
     let profile = request.profile.clone();
-    let mut cmd = build_hermes_mcp_login_command(&connection, &server, profile.as_deref());
+    let jail = if full_mode {
+        None
+    } else {
+        home_split::reader_jail(
+            Path::new(&connection.hermes_home),
+            sandbox_profile::jail_engages(),
+        )?
+    };
+    let mut cmd =
+        build_hermes_mcp_login_command(&connection, &server, profile.as_deref(), jail.as_deref());
 
     // Run the short-lived CLI off the async runtime with a bounded wait. We read
     // its piped output to find the authorization URL; we never persist it.
@@ -3766,11 +3782,6 @@ pub async fn hermes_mcp_oauth_login(
         )
     })??;
 
-    // The token lands in the shared home (the CLI runs there): the sandboxed
-    // runtime gets a copy, from the shared home to the jail's, never back.
-    if join.exit_success {
-        home_split::copy_mcp_tokens(Path::new(&connection.hermes_home), &server);
-    }
     let combined = format!("{}\n{}", join.stdout, join.stderr);
     let auth_url = extract_authorization_url(&combined);
     // Open the authorization URL in the OS browser so the user can complete the
@@ -5532,7 +5543,7 @@ pub async fn open_hermes_tui_debug(
     let sandbox_profile = if full_mode {
         None
     } else {
-        prepare_sandbox(&app, &hermes_home, agent_cli_access, working_dir.as_deref())
+        sandbox_profile::prepare(&app, &hermes_home, agent_cli_access, working_dir.as_deref())
     };
     let sandbox_available = if full_mode {
         sandbox_would_engage(&app, &hermes_home)
@@ -6179,8 +6190,8 @@ fn wait_for_recorded_hermes_runtime_exit(
 /// Best-effort SIGKILL to a whole process group, addressed by the leader's pid
 /// (a negative target is a process group). Shells out to `/bin/kill` to stay
 /// dependency-free, matching the module's other system-utility spawns. Only
-/// meaningful for a child spawned with `process_group(0)`, whose pid is its
-/// group id.
+/// meaningful for a child started in its own session
+/// (`sandbox_profile::own_session`), whose pid is its group id.
 #[cfg(unix)]
 fn kill_process_group(pid: u32) {
     let _ = Command::new("/bin/kill")
@@ -6602,81 +6613,6 @@ fn apply_isolated_hermes_env(
     // Every Hermes spawn goes through here (dashboard, CLI runs, gateway
     // install) — the one chokepoint to keep Windows consoles invisible.
     crate::win_console::hide_console(cmd);
-}
-
-/// Builds the Seatbelt profile, writes it to disk, and returns the path to hand
-/// to `sandbox-exec -f`. Returns `None` — meaning "spawn unsandboxed" — on
-/// non-macOS, when `sandbox-exec` is absent, when the escape-hatch env var is
-/// set, or if the profile can't be written. Callers treat `None` as "not
-/// sandboxed" and surface that honestly in the UI.
-///
-/// The profile is written to `app_data_dir` itself, which the jail cannot
-/// write (only parts of `hermes/` are re-opened, ADR-0140), so the jailed
-/// agent can't rewrite the policy that governs it or the one the next spawn
-/// will read.
-#[cfg(target_os = "macos")]
-fn prepare_sandbox(
-    app: &AppHandle,
-    hermes_home: &Path,
-    agent_cli_access: bool,
-    working_dir: Option<&Path>,
-) -> Option<PathBuf> {
-    // The caller logs the sandboxed/unsandboxed outcome; this only short-circuits.
-    if env_flag_enabled(JUNE_HERMES_DISABLE_SANDBOX_ENV) {
-        return None;
-    }
-    if !Path::new(SANDBOX_EXEC_PATH).exists() {
-        return None;
-    }
-    let home = std::env::var_os("HOME").map(PathBuf::from)?;
-    // Canonical, so the rules match the realpaths the kernel checks.
-    let canonical = |path: PathBuf| std::fs::canonicalize(&path).unwrap_or(path);
-    let runtime_dir = canonical(managed_hermes_runtime_dir(app).ok()?);
-    let hermes_home = canonical(hermes_home.to_path_buf());
-    // ADR-0140: the shared home (the unrestricted runtime's, the gateway's)
-    // is closed to the jail as a whole.
-    let shared = canonical(home_split::shared_home(&hermes_home));
-    let closed_homes: Vec<PathBuf> = if shared != hermes_home {
-        vec![shared]
-    } else {
-        Vec::new()
-    };
-    let temp_roots = sandbox_profile::sandbox_temp_roots();
-    // `working_dir` only ever arrives here through
-    // `hermes_working_dir::validate_working_dir` (the spawn re-validates on
-    // every start): the "explicit, validated grant" that lets the jail span
-    // one user-picked folder without ever widening past it.
-    let profile = sandbox_profile::build_sandbox_profile(&sandbox_profile::SandboxGrants {
-        home: &home,
-        hermes_home: &hermes_home,
-        runtime_dir: &runtime_dir,
-        closed_homes: &closed_homes,
-        temp_roots: &temp_roots,
-        agent_cli_access,
-        working_dir,
-    });
-    let app_data_dir = crate::app_paths::app_data_dir(app).ok()?;
-    if std::fs::create_dir_all(&app_data_dir).is_err() {
-        return None;
-    }
-    let profile_path = app_data_dir.join("hermes-sandbox.sb");
-    match std::fs::write(&profile_path, profile) {
-        Ok(()) => Some(profile_path),
-        Err(error) => {
-            eprintln!("Could not write Hermes sandbox profile, spawning unsandboxed: {error}");
-            None
-        }
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn prepare_sandbox(
-    _app: &AppHandle,
-    _hermes_home: &Path,
-    _agent_cli_access: bool,
-    _working_dir: Option<&Path>,
-) -> Option<PathBuf> {
-    None
 }
 
 fn agent_cli_access_flag_path(app: &AppHandle) -> Option<PathBuf> {
@@ -7151,7 +7087,7 @@ fn filesystem_roots(hermes_home: &Path) -> Result<Vec<FilesystemRootCandidate>, 
             "Workspace",
             &sandboxed,
             "workspace",
-            "Hermes scratch files and generated outputs.",
+            "Files of sandboxed sessions and what they produce.",
         ),
         (
             "workspace-unrestricted",
@@ -7165,7 +7101,7 @@ fn filesystem_roots(hermes_home: &Path) -> Result<Vec<FilesystemRootCandidate>, 
             "Memory",
             &shared,
             "memories",
-            "Persistent Hermes memory files and stores.",
+            "The assistant's memory files.",
         ),
     ] {
         roots.push(FilesystemRootCandidate {
@@ -8132,6 +8068,7 @@ mod provider_proxy;
 use provider_proxy::provider_models_body;
 pub mod quarantine;
 mod sandbox_profile;
+pub mod session_owner;
 
 #[cfg(test)]
 mod config_tests;
@@ -8695,7 +8632,7 @@ mod tests {
     #[test]
     fn mcp_login_command_passes_server_as_discrete_argument() {
         let connection = oauth_test_connection();
-        let cmd = build_hermes_mcp_login_command(&connection, "linear", Some("work"));
+        let cmd = build_hermes_mcp_login_command(&connection, "linear", Some("work"), None);
         let program = cmd.get_program().to_string_lossy().to_string();
         let args: Vec<String> = cmd
             .get_args()
@@ -8709,12 +8646,41 @@ mod tests {
     #[test]
     fn mcp_login_command_names_the_default_profile_when_none() {
         let connection = oauth_test_connection();
-        let cmd = build_hermes_mcp_login_command(&connection, "linear", None);
+        let cmd = build_hermes_mcp_login_command(&connection, "linear", None, None);
         let args: Vec<String> = cmd
             .get_args()
             .map(|a| a.to_string_lossy().to_string())
             .collect();
         assert_eq!(args, vec!["mcp", "login", "linear", "--profile", "default"]);
+    }
+
+    /// ADR-0140 (F2): each side signs in on its own home, the sandboxed one
+    /// under the jail; no sign-in is copied from one home to the other.
+    #[test]
+    fn mcp_login_signs_in_on_the_sessions_own_home() {
+        let home_of = |cmd: &Command| {
+            cmd.get_envs()
+                .find(|(key, _)| *key == "HERMES_HOME")
+                .and_then(|(_, value)| value)
+                .map(PathBuf::from)
+        };
+        let mut connection = oauth_test_connection();
+        connection.hermes_home = "/data/hermes-sandboxed".to_string();
+        let jailed = build_hermes_mcp_login_command(
+            &connection,
+            "linear",
+            None,
+            Some(Path::new("/data/reader.sb")),
+        );
+        assert_eq!(jailed.get_program(), SANDBOX_EXEC_PATH);
+        assert_eq!(
+            home_of(&jailed),
+            Some(PathBuf::from("/data/hermes-sandboxed"))
+        );
+        connection.full_mode = true;
+        let full = build_hermes_mcp_login_command(&connection, "linear", None, None);
+        assert_eq!(full.get_program(), "/usr/local/bin/hermes");
+        assert_eq!(home_of(&full), Some(PathBuf::from("/data/hermes")));
     }
 
     #[test]

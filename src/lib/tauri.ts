@@ -1260,8 +1260,14 @@ export async function setHermesAgentCliAccess(enabled: boolean) {
 
 /** What the first start under ADR-0140 set aside from the assistant's
  * folder (hooks, scripts, routines that run a script, plugins, installed
- * servers, the scanner), while the person has not seen it. */
-export type HermesQuarantineNotice = { dir: string; count: number };
+ * servers, the scanner), what it left in place but flagged, and what the
+ * person has to do again, while the person has not seen it. */
+export type HermesQuarantineNotice = {
+  dir: string;
+  items: string[];
+  flagged: string[];
+  redo: string[];
+};
 
 export async function hermesQuarantineNotice() {
   return invoke<HermesQuarantineNotice | null>("hermes_quarantine_notice");
@@ -1269,6 +1275,11 @@ export async function hermesQuarantineNotice() {
 
 export async function dismissHermesQuarantineNotice() {
   return invoke<void>("dismiss_hermes_quarantine_notice");
+}
+
+/** Puts back what was set aside; returns how many items came back. */
+export async function restoreHermesQuarantine() {
+  return invoke<number>("restore_hermes_quarantine");
 }
 
 export async function hermesBridgeMessagingPlatforms() {

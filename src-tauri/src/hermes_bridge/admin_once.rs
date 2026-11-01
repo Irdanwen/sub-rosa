@@ -286,6 +286,9 @@ pub(super) fn run_blocking_in(
         Some((stdout, stderr)) => cmd.stdout(stdout).stderr(stderr),
         None => cmd.stdout(Stdio::null()).stderr(Stdio::null()),
     };
+    if jail.is_some() {
+        super::sandbox_profile::own_session(&mut cmd);
+    }
     let mut child = cmd.spawn().map_err(|error| failed(error.to_string()))?;
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(request.to_string().as_bytes());

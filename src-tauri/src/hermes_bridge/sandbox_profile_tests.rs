@@ -667,6 +667,207 @@ fn the_jail_cannot_signal_a_process_outside_it() {
     );
 }
 
+/// Asks launchd for each service by name from inside the jail: 0 is
+/// found, 1100 is refused by the sandbox, 1102 is unknown on this system.
+const LOOKUP_PROBE: &str = "import ctypes,sys\nlibc=ctypes.CDLL(None)\nbp=ctypes.c_uint.in_dll(libc,'bootstrap_port')\nf=libc.bootstrap_look_up\nf.argtypes=[ctypes.c_uint,ctypes.c_char_p,ctypes.POINTER(ctypes.c_uint)]\nfor n in sys.argv[1:]:\n    p=ctypes.c_uint(0)\n    print(n, f(bp.value,n.encode(),ctypes.byref(p)))\n";
+
+/// One real service behind each refused name (ADR-0140, C1).
+const SERVICES_THAT_START_PROGRAMS: &[&str] = &[
+    "com.apple.coreservices.appleevents",
+    "com.apple.coreservices.launchservicesd",
+    "com.apple.lsd.open",
+    "com.apple.lsd.openurl",
+    "com.apple.lsd.modifydb",
+    "com.apple.siriactionsd.xpc",
+    "com.apple.WorkflowKit.ShortcutsViewService",
+    "com.apple.linkd.autoShortcut",
+    "com.apple.private.alloy.shortcuts-idswake",
+    "com.apple.backgroundtaskmanagementagent",
+    "com.apple.xpc.smd",
+    "com.apple.dock.server",
+    "com.apple.pbs.fetch_services",
+    "com.apple.finder.ServiceProvider",
+];
+
+fn look_up(jail: Option<&KernelJail>, names: &[&str]) -> Vec<(String, i64)> {
+    let mut command = match jail {
+        Some(jail) => {
+            let mut command = Command::new(SANDBOX_EXEC_PATH);
+            command
+                .arg("-f")
+                .arg(&jail.profile_path)
+                .arg("/usr/bin/python3");
+            command
+        }
+        None => Command::new("/usr/bin/python3"),
+    };
+    let out = command
+        .arg("-I")
+        .arg("-c")
+        .arg(LOOKUP_PROBE)
+        .args(names)
+        .output()
+        .expect("run the lookup probe");
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let (name, code) = line.rsplit_once(' ')?;
+            Some((name.to_string(), code.parse().ok()?))
+        })
+        .collect()
+}
+
+/// ADR-0140 (C1): every service that would start or drive a program outside
+/// the jail is refused to it, while the services a runtime needs answer.
+#[test]
+fn no_service_that_starts_a_program_outside_answers_the_jail() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let outside = look_up(None, SERVICES_THAT_START_PROGRAMS);
+    let inside = look_up(Some(&jail), SERVICES_THAT_START_PROGRAMS);
+    let mut checked = 0;
+    for (name, code) in &outside {
+        if *code != 0 {
+            continue; // not on this system
+        }
+        let jailed = inside.iter().find(|(n, _)| n == name).map(|(_, c)| *c);
+        assert_eq!(jailed, Some(1100), "{name} answers the jail");
+        checked += 1;
+    }
+    assert!(checked >= 10, "only {checked} services exist to check");
+    let needed = look_up(Some(&jail), &["com.apple.cfprefsd.agent"]);
+    assert_eq!(needed, vec![("com.apple.cfprefsd.agent".to_string(), 0)]);
+}
+
+/// ADR-0140 (C1): `open` of an application from the jail starts nothing.
+/// The application would write into the shared home, closed to the jail.
+#[test]
+fn opening_an_application_from_the_jail_starts_nothing() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let marker = jail.shared_home.join("opened-from-the-jail");
+    let app = jail.root.join("Probe.app/Contents");
+    std::fs::create_dir_all(app.join("MacOS")).unwrap();
+    std::fs::write(
+        app.join("Info.plist"),
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict><key>CFBundleExecutable</key><string>probe</string><key>CFBundleIdentifier</key><string>xyz.subrosa.jail-open-probe</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>\n",
+    )
+    .unwrap();
+    let exe = app.join("MacOS/probe");
+    std::fs::write(&exe, format!("#!/bin/sh\ntouch {}\n", shell_quote(&marker))).unwrap();
+    std::fs::set_permissions(&exe, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let out = jail.sh(&format!(
+        "/usr/bin/open -g -n {}; /usr/bin/open https://example.invalid/",
+        shell_quote(&jail.root.join("Probe.app"))
+    ));
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    assert!(!marker.exists(), "an application started outside the jail");
+    assert!(!out.status.success(), "open succeeded from the jail");
+}
+
+/// ADR-0140 (C1): launchd takes no job and no environment from the jail,
+/// and no preference is written for a program that starts later.
+#[test]
+fn launchd_and_preferences_take_nothing_from_the_jail() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let marker = jail.shared_home.join("launched-from-the-jail");
+    let label = format!("xyz.subrosa.jail-probe-{}", std::process::id());
+    let plist = jail.root.join(format!("{label}.plist"));
+    std::fs::write(
+        &plist,
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict><key>Label</key><string>{label}</string><key>ProgramArguments</key><array><string>/usr/bin/touch</string><string>{}</string></array><key>RunAtLoad</key><true/></dict></plist>\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    let uid = String::from_utf8_lossy(
+        &Command::new("/usr/bin/id")
+            .arg("-u")
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .trim()
+    .to_string();
+    let bootstrap = jail.sh(&format!(
+        "/bin/launchctl bootstrap gui/{uid} {}",
+        shell_quote(&plist)
+    ));
+    let submit = jail.sh(&format!(
+        "/bin/launchctl submit -l {label}-submit -- /usr/bin/touch {}",
+        shell_quote(&marker)
+    ));
+    let setenv = jail.sh("/bin/launchctl setenv SUBROSA_JAIL_PROBE 1");
+    let defaults = jail.sh(&format!(
+        "/usr/bin/defaults write {label} planted -string yes"
+    ));
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    let planted_pref = Command::new("/usr/bin/defaults")
+        .args(["read", &label, "planted"])
+        .output()
+        .unwrap();
+    let env = Command::new("/bin/launchctl")
+        .args(["getenv", "SUBROSA_JAIL_PROBE"])
+        .output()
+        .unwrap();
+    for job in [label.clone(), format!("{label}-submit")] {
+        let _ = Command::new("/bin/launchctl")
+            .args(["bootout", &format!("gui/{uid}/{job}")])
+            .output();
+        let _ = Command::new("/bin/launchctl")
+            .args(["remove", &job])
+            .output();
+    }
+    let _ = Command::new("/bin/launchctl")
+        .args(["unsetenv", "SUBROSA_JAIL_PROBE"])
+        .output();
+    let _ = Command::new("/usr/bin/defaults")
+        .args(["delete", &label])
+        .output();
+    assert!(
+        !bootstrap.status.success(),
+        "launchd took a job from the jail"
+    );
+    assert!(!submit.status.success(), "launchd took a submitted job");
+    assert!(
+        !setenv.status.success(),
+        "launchd took an environment variable"
+    );
+    assert!(env.stdout.iter().all(u8::is_ascii_whitespace));
+    assert!(!defaults.status.success(), "a preference was written");
+    assert!(!planted_pref.status.success(), "a preference was written");
+    assert!(!marker.exists(), "a job ran outside the jail");
+}
+
+/// ADR-0140 (M1): the runtime starts in a session of its own, so nothing
+/// in the jail can join the app's process group (from where its signals
+/// would no longer count as going to "others") and signal the app.
+#[test]
+fn the_jail_cannot_join_the_apps_process_group() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let app = std::process::id();
+    let mut cmd = Command::new(SANDBOX_EXEC_PATH);
+    cmd.arg("-f")
+        .arg(&jail.profile_path)
+        .arg("/usr/bin/python3")
+        .arg("-I")
+        .arg("-c")
+        .arg(format!(
+            "import os\ntry:\n    os.setpgid(0, os.getpgid({app}))\n    print('joined')\nexcept OSError as e:\n    print('refused', e.errno)\n"
+        ));
+    super::own_session(&mut cmd);
+    let out = cmd.output().expect("run the probe");
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(said.starts_with("refused"), "{said}");
+}
+
 #[test]
 fn credential_stores_stay_unreadable() {
     let Some(jail) = KernelJail::new(false, None) else {

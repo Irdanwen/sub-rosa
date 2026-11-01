@@ -9,7 +9,13 @@
  * localStorage (not the backend) because the runtime's session store is
  * machine-local too, and the map must be readable synchronously on render
  * for the session bar's badge.
+ *
+ * The native side keeps its own record of the home each session lives in
+ * (ADR-0140): it reads a session from that home only, so the sandboxed
+ * runtime cannot stand in for a session of the unrestricted one.
  */
+
+import { invoke } from "@tauri-apps/api/core";
 
 const STORAGE_KEY = "june.agent.unrestrictedSessions";
 
@@ -45,7 +51,19 @@ export function sessionUnrestricted(sessionId: string | undefined): boolean {
   return readStore()[sessionId] === true;
 }
 
+/** Tells the native side which home a session was created or resumed in. */
+export function recordSessionHome(sessionId: string, unrestricted: boolean) {
+  try {
+    void invoke("hermes_record_session_home", {
+      request: { sessionId, unrestricted },
+    }).catch(() => {});
+  } catch {
+    // Outside the app shell (tests, the browser lab) there is no record.
+  }
+}
+
 export function rememberSessionMode(sessionId: string, unrestricted: boolean) {
+  recordSessionHome(sessionId, unrestricted);
   const store = readStore();
   if (unrestricted) {
     store[sessionId] = true;

@@ -395,15 +395,55 @@ mod tests {
     }
 }
 
+/// Each conversation's marker (last message, count, length) and latest
+/// activity, read from a runtime's database alone: the app's own database is
+/// never attached to a connection on a file the jail writes (ADR-0140).
 #[cfg(desktop)]
-const BACKFILL_SESSIONS: &str = "SELECT m.session_id, printf('%s:%d:%d',MAX(m.id),COUNT(*),SUM(length(m.content))) AS marker FROM messages m LEFT JOIN portable_app.account_conversation_backfill b ON b.profile='default' AND b.session_id=m.session_id WHERE m.role IN ('user','assistant') AND m.active=1 AND m.content IS NOT NULL GROUP BY m.session_id HAVING marker<>COALESCE(b.last_message_id,'') ORDER BY MAX(m.timestamp) DESC LIMIT 10";
+const SESSION_MARKERS: &str = "SELECT session_id, printf('%s:%d:%d',MAX(id),COUNT(*),SUM(length(content))) AS marker, MAX(timestamp) AS last FROM messages WHERE role IN ('user','assistant') AND active=1 AND content IS NOT NULL GROUP BY session_id";
 
-/// Bound each foreground sweep to ten changed desktop conversations. The
-/// source connection is read-only and attaches only the app's own known DB.
-/// A durable marker permits progress over restarts without rereading every
-/// transcript; it never contains message text or credentials.
+/// Ten conversations per foreground sweep.
+#[cfg(desktop)]
+const BACKFILL_BATCH: usize = 10;
+
+/// The changed conversations a sweep mirrors from one home: owned by that
+/// home, with a marker other than the one recorded, latest first.
+#[cfg(desktop)]
+fn changed_sessions(
+    markers: Vec<(String, String, f64)>,
+    done: &std::collections::HashMap<String, String>,
+    owners: &std::collections::BTreeMap<String, crate::hermes_bridge::session_owner::Owner>,
+    home: crate::hermes_bridge::session_owner::Owner,
+) -> Vec<(String, String)> {
+    let mut changed: Vec<(String, String, f64)> = markers
+        .into_iter()
+        .filter(|(id, marker, _)| owners.get(id) == Some(&home) && done.get(id) != Some(marker))
+        .collect();
+    changed.sort_by(|a, b| b.2.total_cmp(&a.2));
+    changed
+        .into_iter()
+        .take(BACKFILL_BATCH)
+        .map(|(id, marker, _)| (id, marker))
+        .collect()
+}
+
+/// The backfill's key for a home: the shared home keeps the key it always
+/// had, the sandboxed home has its own (ADR-0140).
+#[cfg(desktop)]
+fn backfill_profile(home: crate::hermes_bridge::session_owner::Owner) -> &'static str {
+    match home {
+        crate::hermes_bridge::session_owner::Owner::Shared => "default",
+        crate::hermes_bridge::session_owner::Owner::Sandboxed => "sandboxed",
+    }
+}
+
+/// Bound each foreground sweep to ten changed desktop conversations per
+/// home. The source connection is read-only and its schema distrusted. A
+/// durable marker permits progress over restarts without rereading every
+/// transcript; it never contains message text or credentials. Each
+/// conversation is mirrored from the home that owns it only (ADR-0140).
 #[cfg(desktop)]
 pub async fn backfill_desktop(app: &AppHandle) -> Result<(), AppError> {
+    use crate::hermes_bridge::session_owner::Owner;
     static BACKFILL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let Ok(_backfill) = BACKFILL.try_lock() else {
         return Ok(());
@@ -417,11 +457,11 @@ pub async fn backfill_desktop(app: &AppHandle) -> Result<(), AppError> {
         return Ok(());
     }
     let paths = crate::commands::app_paths(app)?;
-    // Both homes hold conversations (ADR-0140), read as data only.
-    for home in ["hermes-sandboxed", "hermes"] {
-        let source = paths.data_dir.join(home).join("state.db");
+    let shared_home = paths.data_dir.join(Owner::Shared.dir_name());
+    for home in [Owner::Sandboxed, Owner::Shared] {
+        let source = home.home(&shared_home).join("state.db");
         if source.exists() {
-            backfill_from(app, &app_pool, &paths, &source).await?;
+            backfill_from(app, &app_pool, &shared_home, &source, home).await?;
         }
     }
     Ok(())
@@ -431,25 +471,38 @@ pub async fn backfill_desktop(app: &AppHandle) -> Result<(), AppError> {
 async fn backfill_from(
     app: &AppHandle,
     app_pool: &sqlx_sqlite::SqlitePool,
-    paths: &crate::app_paths::AppPaths,
+    shared_home: &std::path::Path,
     source: &std::path::Path,
+    home: crate::hermes_bridge::session_owner::Owner,
 ) -> Result<(), AppError> {
-    let options = sqlx_sqlite::SqliteConnectOptions::new()
-        .filename(source)
-        .read_only(true)
-        .create_if_missing(false);
+    use crate::hermes_bridge::session_owner;
     let source_pool = sqlx_sqlite::SqlitePoolOptions::new()
         .max_connections(1)
-        .connect_with(options)
+        .connect_with(session_owner::hardened_read_options(source))
         .await?;
-    query("ATTACH DATABASE ? AS portable_app")
-        .bind(paths.database_path.to_string_lossy().as_ref())
-        .execute(&source_pool)
-        .await?;
-    let sessions = query(BACKFILL_SESSIONS).fetch_all(&source_pool).await?;
-    for session in sessions {
-        let session_id: String = session.get("session_id");
-        let marker: String = session.get("marker");
+    let markers: Vec<(String, String, f64)> = query(SESSION_MARKERS)
+        .fetch_all(&source_pool)
+        .await?
+        .into_iter()
+        .map(|row| (row.get("session_id"), row.get("marker"), row.get("last")))
+        .collect();
+    let profile = backfill_profile(home);
+    let done: std::collections::HashMap<String, String> = query(
+        "SELECT session_id,last_message_id FROM account_conversation_backfill WHERE profile=?",
+    )
+    .bind(profile)
+    .fetch_all(app_pool)
+    .await?
+    .into_iter()
+    .map(|row| (row.get("session_id"), row.get("last_message_id")))
+    .collect();
+    let ids: Vec<&str> = markers.iter().map(|(id, _, _)| id.as_str()).collect();
+    let in_shared = match home {
+        session_owner::Owner::Shared => ids.iter().map(|id| (*id).to_string()).collect(),
+        session_owner::Owner::Sandboxed => session_owner::in_shared_home(shared_home, &ids).await,
+    };
+    let owners = session_owner::owners_of(shared_home, ids.iter().copied(), &in_shared);
+    for (session_id, marker) in changed_sessions(markers, &done, &owners, home) {
         let rows=query("SELECT CAST(id AS TEXT) AS id,role,content,timestamp FROM messages WHERE session_id=? AND role IN ('user','assistant') AND active=1 AND content IS NOT NULL ORDER BY timestamp,id LIMIT 4001").bind(&session_id).fetch_all(&source_pool).await?;
         let messages:Vec<_>=rows.into_iter().map(|r|json!({"id":r.get::<String,_>("id"),"role":r.get::<String,_>("role"),"content":r.get::<String,_>("content"),"timestamp":r.get::<f64,_>("timestamp")})).collect();
         let mut response = json!({"messages":messages});
@@ -458,7 +511,7 @@ async fn backfill_from(
             Err(e) if e.code == "conversation_invalid" => {} // bounded history is explicitly unsupported, not executed
             Err(e) => return Err(e),
         }
-        query("INSERT INTO account_conversation_backfill(profile,session_id,last_message_id) VALUES('default',?,?) ON CONFLICT(profile,session_id) DO UPDATE SET last_message_id=excluded.last_message_id").bind(&session_id).bind(&marker).execute(app_pool).await?;
+        query("INSERT INTO account_conversation_backfill(profile,session_id,last_message_id) VALUES(?,?,?) ON CONFLICT(profile,session_id) DO UPDATE SET last_message_id=excluded.last_message_id").bind(profile).bind(&session_id).bind(&marker).execute(app_pool).await?;
     }
     source_pool.close().await;
     Ok(())
@@ -581,12 +634,8 @@ mod persistence_tests {
     #[cfg(desktop)]
     #[tokio::test]
     async fn backfill_makes_bounded_durable_progress_and_revisits_changed_sessions() {
+        use crate::hermes_bridge::session_owner::Owner;
         let pool = database().await;
-        query("ATTACH DATABASE ':memory:' AS portable_app")
-            .execute(&pool)
-            .await
-            .unwrap();
-        query("CREATE TABLE portable_app.account_conversation_backfill(profile TEXT,session_id TEXT,last_message_id TEXT,PRIMARY KEY(profile,session_id))").execute(&pool).await.unwrap();
         query("CREATE TABLE messages(id INTEGER PRIMARY KEY,session_id TEXT,role TEXT,content TEXT,active INTEGER,timestamp REAL)").execute(&pool).await.unwrap();
         for n in 1..=12 {
             query("INSERT INTO messages VALUES(?,?,'user','Hello',1,?)")
@@ -598,29 +647,41 @@ mod persistence_tests {
                 .unwrap();
         }
         query("INSERT INTO messages VALUES(13,'hidden','system','Secret',1,100),(14,'inactive','user','Old',0,100)").execute(&pool).await.unwrap();
-        let first = query(BACKFILL_SESSIONS).fetch_all(&pool).await.unwrap();
-        assert_eq!(first.len(), 10);
-        for row in first {
-            query("INSERT INTO portable_app.account_conversation_backfill VALUES('default',?,?)")
-                .bind(row.get::<String, _>("session_id"))
-                .bind(row.get::<String, _>("marker"))
-                .execute(&pool)
+        let markers = || async {
+            query(SESSION_MARKERS)
+                .fetch_all(&pool)
                 .await
-                .unwrap();
-        }
-        let remaining = query(BACKFILL_SESSIONS).fetch_all(&pool).await.unwrap();
+                .unwrap()
+                .into_iter()
+                .map(|r| (r.get("session_id"), r.get("marker"), r.get("last")))
+                .collect::<Vec<(String, String, f64)>>()
+        };
+        let owners: std::collections::BTreeMap<String, Owner> = (1..=12)
+            .map(|n| (format!("session-{n}"), Owner::Sandboxed))
+            .collect();
+        let mut done = std::collections::HashMap::new();
+        let first = changed_sessions(markers().await, &done, &owners, Owner::Sandboxed);
+        assert_eq!(first.len(), 10);
+        done.extend(first);
+        let remaining = changed_sessions(markers().await, &done, &owners, Owner::Sandboxed);
         assert_eq!(remaining.len(), 2);
-        assert!(remaining.iter().all(|r| matches!(
-            r.get::<String, _>("session_id").as_str(),
-            "session-1" | "session-2"
-        )));
+        assert!(remaining
+            .iter()
+            .all(|(id, _)| matches!(id.as_str(), "session-1" | "session-2")));
         query("UPDATE messages SET content='Edited answer' WHERE session_id='session-12'")
             .execute(&pool)
             .await
             .unwrap();
-        let changed = query(BACKFILL_SESSIONS).fetch_all(&pool).await.unwrap();
+        let changed = changed_sessions(markers().await, &done, &owners, Owner::Sandboxed);
         assert_eq!(changed.len(), 3);
-        assert_eq!(changed[0].get::<String, _>("session_id"), "session-12");
+        assert_eq!(changed[0].0, "session-12");
+        // ADR-0140: a home mirrors only the conversations it owns, under
+        // its own key.
+        assert!(changed_sessions(markers().await, &done, &owners, Owner::Shared).is_empty());
+        assert_ne!(
+            backfill_profile(Owner::Sandboxed),
+            backfill_profile(Owner::Shared)
+        );
     }
     #[tokio::test]
     async fn custom_conversations_cannot_be_continued_with_general_runtime_permissions() {

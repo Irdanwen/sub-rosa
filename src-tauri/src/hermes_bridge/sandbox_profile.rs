@@ -16,6 +16,33 @@ use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use super::{AGENT_CLI_STATE_DIRS, AGENT_CLI_STATE_FILE_PREFIXES};
 
+/// Starts `cmd` in a session of its own, so its pid is its process group and
+/// teardown reaps the whole tree with one signal (JUN-338). A session, not
+/// only a group (ADR-0140): `setpgid` cannot cross sessions, so nothing the
+/// runtime starts can join the app's process group, where the jail's
+/// "no signal to others" rule would no longer cover the app.
+pub(super) fn own_session(cmd: &mut std::process::Command) {
+    #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
+    {
+        use std::os::unix::process::CommandExt as _;
+        // SAFETY: the hook runs in the forked child before exec and calls
+        // only `setsid`, which is async-signal-safe.
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        use std::os::unix::process::CommandExt as _;
+        cmd.process_group(0);
+    }
+}
+
 /// The folders of the runtime's home the jail may write, relative to it.
 /// Measured on the pinned runtime under the profile (ADR-0140): its dashboard
 /// starts and answers, a session opens and runs terminal, file, search, todo,
@@ -300,6 +327,23 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
     out.push_str("(deny signal (target others))\n");
     out.push_str("(allow signal (target same-sandbox))\n\n");
 
+    // ADR-0140: no system service that starts, drives or configures a
+    // program outside the jail on the jail's behalf.
+    out.push_str(";; Services that launch or drive programs outside the jail.\n");
+    out.push_str("(deny mach-lookup\n");
+    for (name, prefix) in REFUSED_MACH_SERVICES {
+        let filter = if *prefix {
+            "global-name-prefix"
+        } else {
+            "global-name"
+        };
+        out.push_str(&format!("  ({filter} {})\n", sbpl_quote(name)));
+    }
+    out.push_str(")\n");
+    out.push_str(";; Preferences are written by a daemon outside the jail and read by\n");
+    out.push_str(";; every program that later starts: none from here.\n");
+    out.push_str("(deny user-preference-write)\n\n");
+
     out.push_str(";; Secret-read denylist: reads are otherwise open so the assistant can\n");
     out.push_str(";; work on the user's files, but credential stores stay off-limits.\n");
     out.push_str("(deny file-read*\n");
@@ -317,6 +361,163 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
     push_secret_stores(&mut out, home);
     out.push_str(")\n");
     out
+}
+
+/// The system services the jail may not reach (ADR-0140), `true` for a
+/// name prefix. Each one would start, drive or configure a program outside
+/// the jail, which then runs with none of its limits. Measured on macOS 26:
+///
+/// - `com.apple.coreservices.` and `com.apple.lsd.`: LaunchServices
+///   (`open`, `NSWorkspace`, URL and file handlers, the handler database)
+///   and Apple events (`osascript` driving Finder, Terminal, System Events).
+/// - `com.apple.siri`, `com.apple.WorkflowKit.`, `com.apple.shortcuts`,
+///   `com.apple.linkd.`, `com.apple.private.alloy.shortcuts`: Shortcuts,
+///   whose `shortcuts run` executes actions (shell scripts among them) in
+///   its own daemon.
+/// - `com.apple.backgroundtaskmanagement` and `com.apple.xpc.smd`: login
+///   items and helper registration, which run at the next login.
+/// - `com.apple.dock.`: the Dock launches applications.
+/// - `com.apple.pbs.` and `com.apple.finder.ServiceProvider`: the Services
+///   menu, which runs a service inside another application.
+///
+/// `launchctl bootstrap`/`load`/`submit`/`setenv` are refused by launchd to
+/// any sandboxed process, setuid programs (`crontab`, `at`) cannot be
+/// executed under the profile, and the keychain is a file the write jail
+/// already closes; the kernel tests keep each of these honest.
+#[cfg(target_os = "macos")]
+pub(super) const REFUSED_MACH_SERVICES: &[(&str, bool)] = &[
+    ("com.apple.coreservices.", true),
+    ("com.apple.lsd.", true),
+    ("com.apple.siri", true),
+    ("com.apple.WorkflowKit.", true),
+    ("com.apple.shortcuts", true),
+    ("com.apple.linkd.", true),
+    ("com.apple.private.alloy.shortcuts", true),
+    ("com.apple.backgroundtaskmanagement", true),
+    ("com.apple.xpc.smd", false),
+    ("com.apple.dock.", true),
+    ("com.apple.pbs.", true),
+    ("com.apple.finder.ServiceProvider", false),
+];
+
+/// The profile file of the runtime, and of the one-off reader of its home,
+/// in the app's data folder.
+pub(super) const RUNTIME_PROFILE_FILE: &str = "hermes-sandbox.sb";
+pub(super) const READER_PROFILE_FILE: &str = "hermes-sandbox-reader.sb";
+
+/// Builds the Seatbelt profile, writes it to disk, and returns the path to hand
+/// to `sandbox-exec -f`. Returns `None` (meaning "spawn unsandboxed") on
+/// non-macOS, when `sandbox-exec` is absent, when the escape-hatch env var is
+/// set, or if the profile can't be written. Callers treat `None` as "not
+/// sandboxed" and surface that honestly in the UI.
+///
+/// The profile is written to `app_data_dir` itself, which the jail cannot
+/// write (only parts of the sandboxed home are re-opened, ADR-0140), so the
+/// jailed agent can't rewrite the policy that governs it or the one the next
+/// spawn will read.
+pub(super) fn prepare(
+    app: &tauri::AppHandle,
+    hermes_home: &std::path::Path,
+    agent_cli_access: bool,
+    working_dir: Option<&std::path::Path>,
+) -> Option<std::path::PathBuf> {
+    write_profile(
+        app,
+        hermes_home,
+        agent_cli_access,
+        working_dir,
+        RUNTIME_PROFILE_FILE,
+    )
+}
+
+/// Writes the profile a one-off reader of the sandboxed home runs under
+/// (ADR-0140): the jail of that home, fresh, with no working folder and no
+/// agent CLI state, whatever the last sandboxed session had. Written at each
+/// runtime start, whichever its mode.
+pub(super) fn prepare_reader(app: &tauri::AppHandle, any_home: &std::path::Path) {
+    let sandboxed = super::home_split::sandboxed_home(any_home);
+    if std::fs::create_dir_all(&sandboxed).is_err() {
+        return;
+    }
+    let _ = write_profile(app, &sandboxed, false, None, READER_PROFILE_FILE);
+}
+
+/// Whether sandboxed processes on this machine run under the jail: then a
+/// reader of the jail's home must too, or not run at all.
+pub(super) fn jail_engages() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        !super::env_flag_enabled(super::JUNE_HERMES_DISABLE_SANDBOX_ENV)
+            && Path::new(super::SANDBOX_EXEC_PATH).exists()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn write_profile(
+    app: &tauri::AppHandle,
+    hermes_home: &Path,
+    agent_cli_access: bool,
+    working_dir: Option<&Path>,
+    file_name: &str,
+) -> Option<PathBuf> {
+    // The caller logs the sandboxed/unsandboxed outcome; this only short-circuits.
+    if !jail_engages() {
+        return None;
+    }
+    let home = std::env::var_os("HOME").map(PathBuf::from)?;
+    // Canonical, so the rules match the realpaths the kernel checks.
+    let canonical = |path: PathBuf| std::fs::canonicalize(&path).unwrap_or(path);
+    let runtime_dir = canonical(super::managed_hermes_runtime_dir(app).ok()?);
+    let hermes_home = canonical(hermes_home.to_path_buf());
+    // ADR-0140: the shared home (the unrestricted runtime's, the gateway's)
+    // is closed to the jail as a whole.
+    let shared = canonical(super::home_split::shared_home(&hermes_home));
+    let closed_homes: Vec<PathBuf> = if shared != hermes_home {
+        vec![shared]
+    } else {
+        Vec::new()
+    };
+    let temp_roots = sandbox_temp_roots();
+    // `working_dir` only ever arrives here through
+    // `hermes_working_dir::validate_working_dir` (the spawn re-validates on
+    // every start): the "explicit, validated grant" that lets the jail span
+    // one user-picked folder without ever widening past it.
+    let profile = build_sandbox_profile(&SandboxGrants {
+        home: &home,
+        hermes_home: &hermes_home,
+        runtime_dir: &runtime_dir,
+        closed_homes: &closed_homes,
+        temp_roots: &temp_roots,
+        agent_cli_access,
+        working_dir,
+    });
+    let app_data_dir = crate::app_paths::app_data_dir(app).ok()?;
+    if std::fs::create_dir_all(&app_data_dir).is_err() {
+        return None;
+    }
+    let profile_path = app_data_dir.join(file_name);
+    match std::fs::write(&profile_path, profile) {
+        Ok(()) => Some(profile_path),
+        Err(error) => {
+            eprintln!("Could not write Hermes sandbox profile, spawning unsandboxed: {error}");
+            None
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn write_profile(
+    _app: &tauri::AppHandle,
+    _hermes_home: &std::path::Path,
+    _agent_cli_access: bool,
+    _working_dir: Option<&std::path::Path>,
+    _file_name: &str,
+) -> Option<std::path::PathBuf> {
+    None
 }
 
 /// Every folder above `paths`, up to the root, once each.

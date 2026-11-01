@@ -409,6 +409,7 @@
   "The sample could not be read.",
   "The sample is too long. Keep it under a minute: 5 to 10 seconds of clear speech is enough.",
   "The sample is too short. Record 5 to 10 seconds of clear speech.",
+  "The sandboxed conversations cannot be read until the assistant starts once.",
   "The scan could not be stored on this device.",
   "The scanned PDF is not on this device.",
   "The screen could not be captured. Try again.",

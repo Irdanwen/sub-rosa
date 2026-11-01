@@ -453,3 +453,31 @@ fn settings_changes_succeed_from_the_app_while_the_runtime_is_jailed() {
     assert!(dotenv.contains("TELEGRAM_BOT_TOKEN='k-1'"));
     assert!(!dotenv.contains("PIP_INDEX_URL"));
 }
+
+/// (review 2, F1) The one-off reader of the sandboxed home answers under the
+/// reader's profile (no working folder, no agent CLI state, every service
+/// that starts a program outside refused): the list of conversations reads.
+#[test]
+#[ignore = "needs the installed runtime (SUBROSA_HERMES_RUNTIME)"]
+fn the_jailed_reader_reads_the_sandboxed_home() {
+    let jail = RealJail::new();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let listed = runtime
+        .block_on(admin_once::read_on(
+            &jail.hermes().to_string_lossy(),
+            &jail.home,
+            Some(jail.profile.clone()),
+            reqwest::Method::GET,
+            "/api/sessions?limit=5&offset=0",
+            None,
+        ))
+        .unwrap_or_else(|error| panic!("the jailed reader failed: {}", error.message));
+    eprintln!("jailed reader: {listed}");
+    assert!(
+        listed.get("sessions").is_some_and(Value::is_array),
+        "{listed}"
+    );
+}
