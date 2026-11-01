@@ -48,9 +48,18 @@ fn guarded_system_prefixes() -> Vec<PathBuf> {
             "/sbin",
             "/etc",
             "/private/etc",
+            // ADR-0140 (M1): temp and run folders hold other programs'
+            // sockets (a database's, a terminal multiplexer's, launchd's
+            // agent listeners), which a jail allowed to write there could
+            // carry into reach.
+            "/private/tmp",
+            "/private/var/tmp",
+            "/private/var/folders",
+            "/private/var/run",
         ]
         .iter()
         .map(PathBuf::from)
+        .chain(std::iter::once(std::env::temp_dir()))
         .collect()
     }
     #[cfg(windows)]
@@ -749,6 +758,27 @@ mod tests {
             ok(file.to_str().unwrap(), None, None).unwrap_err().code,
             "working_dir_invalid"
         );
+    }
+
+    /// ADR-0140 (M1): no temp or run folder, nor anything under one, is a
+    /// working folder.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn refuses_temp_and_run_folders() {
+        let inside_temp = tempfile::tempdir().expect("tempdir");
+        for raw in [
+            "/private/tmp".to_string(),
+            "/tmp".to_string(),
+            "/private/var/tmp".to_string(),
+            "/private/var/run".to_string(),
+            std::env::temp_dir().to_string_lossy().into_owned(),
+            inside_temp.path().to_string_lossy().into_owned(),
+        ] {
+            let refused =
+                validate_working_dir_with(&raw, None, None, &guarded_system_prefixes(), &[])
+                    .unwrap_err();
+            assert_eq!(refused.code, "working_dir_invalid", "{raw}");
+        }
     }
 
     #[test]

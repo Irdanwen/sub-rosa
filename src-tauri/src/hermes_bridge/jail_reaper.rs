@@ -11,14 +11,15 @@
 //!
 //! And, for what escapes those three (a double fork that leaves the session,
 //! loses its parent and runs an Apple-signed program, whose environment the
-//! system hides): every orphan the app is responsible for that runs under a
-//! sandbox profile, but the system's own services the app uses (WebKit's
-//! and other XPC services, under `/System`).
+//! system hides): every orphan the app is responsible for whose profile is
+//! the jail's, which the kernel tells by whether it may look up the jail's
+//! marker service; the system's services the app uses (WebKit's) run under
+//! their own profiles and are spared, whatever their name or path.
 //!
 //! What stays out of reach: a process that also gave up the app's
-//! responsibility (a spawn with the private disclaim attribute), or that
-//! runs an XPC service's program. It still runs under the jail, with none
-//! of the app's privacy grants (ADR-0140, D2), and nothing restarts it.
+//! responsibility (a spawn with the private disclaim attribute). It still
+//! runs under the jail, with none of the app's privacy grants (ADR-0140,
+//! D2), and nothing restarts it.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -181,41 +182,43 @@ extern "C" {
     fn responsibility_get_pid_responsible_for_pid(pid: libc::pid_t) -> libc::pid_t;
 }
 
-/// An orphan whose responsible process is the app's (`app`), under a
-/// sandbox profile, that is not one of the system's XPC services (F1).
+/// An orphan whose responsible process is the app's (`app`) and that runs
+/// under the jail's own profile (M2). The kernel is asked whether that
+/// process may look up the jail's marker service, a name only the jail's
+/// profiles allow (and no service holds). The system's XPC services the app
+/// uses (WebKit's) run under their own profiles and are spared, whatever
+/// their path; a copy of a program under a name ending in `.xpc` is not.
 #[cfg(target_os = "macos")]
 fn jailed_orphan_of_this_app(pid: u32, app: u32) -> bool {
-    // SAFETY: both calls take a pid and read the kernel's answer; the
-    // sandbox check asks with no operation, only whether a profile applies.
-    let (responsible, sandboxed) = unsafe {
-        (
-            responsibility_get_pid_responsible_for_pid(pid as libc::pid_t),
-            sandbox_check(pid as libc::pid_t, std::ptr::null(), 0),
-        )
-    };
-    if responsible != app as libc::pid_t || sandboxed <= 0 {
-        return false;
-    }
-    let path = program_of(pid);
-    !(path.starts_with("/System/") || path.contains(".xpc/"))
+    // SAFETY: a pid in, a pid out.
+    let responsible = unsafe { responsibility_get_pid_responsible_for_pid(pid as libc::pid_t) };
+    responsible == app as libc::pid_t && runs_under_the_jail(pid)
 }
 
+/// Whether `pid` runs under the jail's profile: sandboxed, and allowed the
+/// marker service. (A path asked of another process is answered "denied"
+/// whatever its profile, measured; a service name is answered truly.)
 #[cfg(target_os = "macos")]
-fn program_of(pid: u32) -> String {
-    let mut buffer = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
-    // SAFETY: the buffer holds PROC_PIDPATHINFO_MAXSIZE bytes.
-    let length = unsafe {
-        libc::proc_pidpath(
-            pid as libc::c_int,
-            buffer.as_mut_ptr().cast(),
-            buffer.len() as u32,
+pub(super) fn runs_under_the_jail(pid: u32) -> bool {
+    const SANDBOX_FILTER_GLOBAL_NAME: libc::c_int = 2;
+    const SANDBOX_CHECK_NO_REPORT: libc::c_int = 0x4000_0000;
+    let Ok(marker) = std::ffi::CString::new(super::sandbox_profile::JAIL_MARKER_SERVICE) else {
+        return false;
+    };
+    // SAFETY: the operation and the name are NUL-terminated and outlive the
+    // call; the check reads the kernel's answer for that process.
+    let (sandboxed, marked) = unsafe {
+        (
+            sandbox_check(pid as libc::pid_t, std::ptr::null(), 0),
+            sandbox_check(
+                pid as libc::pid_t,
+                c"mach-lookup".as_ptr(),
+                SANDBOX_FILTER_GLOBAL_NAME | SANDBOX_CHECK_NO_REPORT,
+                marker.as_ptr(),
+            ),
         )
     };
-    if length <= 0 {
-        return String::new();
-    }
-    buffer.truncate(length as usize);
-    String::from_utf8_lossy(&buffer).into_owned()
+    sandboxed > 0 && marked == 0
 }
 
 #[cfg(target_os = "macos")]
@@ -353,30 +356,29 @@ mod tests {
         assert_eq!(mark_of(runtime.id()), None);
     }
 
-    /// ADR-0140 (F1): a double fork that leaves the session, loses its
-    /// parent and runs an Apple-signed program with an empty environment
-    /// dies with the runtime too.
-    #[test]
-    fn an_orphan_apple_program_without_the_mark_dies_with_the_runtime() {
-        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    /// A runtime under `profile` whose child double-forks, leaves the
+    /// session and execs `program` with an empty environment: an orphan of
+    /// launchd without the mark. Returns the runtime and the orphan's pid.
+    fn runtime_with_an_orphan(profile: &str, program: &str) -> (std::process::Child, u32, String) {
         let mark = new_mark();
         let pid_file = tempfile::NamedTempFile::new().unwrap();
-        let profile = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(profile.path(), "(version 1)\n(allow default)\n").unwrap();
+        let profile_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(profile_file.path(), profile).unwrap();
         let mut runtime = std::process::Command::new(super::super::SANDBOX_EXEC_PATH);
         runtime
             .arg("-f")
-            .arg(profile.path())
+            .arg(profile_file.path())
             .args([
                 "/usr/bin/python3",
                 "-I",
                 "-c",
-                "import os,sys,time\nif os.fork() == 0:\n    os.setsid()\n    if os.fork() == 0:\n        os.execve('/bin/sh', ['/bin/sh', '-c', 'echo $$ > ' + sys.argv[1] + '; exec /bin/sleep 120'], {})\n    os._exit(0)\ntime.sleep(120)\n",
+                "import os,sys,time\nif os.fork() == 0:\n    os.setsid()\n    if os.fork() == 0:\n        open(sys.argv[1], 'w').write(str(os.getpid()))\n        os.execve(sys.argv[2], [sys.argv[2], '120'], {})\n    os._exit(0)\ntime.sleep(120)\n",
             ])
             .arg(pid_file.path())
+            .arg(program)
             .env(JAIL_MARK_ENV, &mark);
         super::super::sandbox_profile::own_session(&mut runtime);
-        let mut runtime = runtime.spawn().unwrap();
+        let runtime = runtime.spawn().unwrap();
         let mut orphan = 0u32;
         for _ in 0..100 {
             if let Ok(text) = std::fs::read_to_string(pid_file.path()) {
@@ -388,25 +390,90 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         assert!(orphan > 0, "the orphan never started");
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        for _ in 0..40 {
+            if parent_of(orphan) == Some(1) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
         assert_eq!(parent_of(orphan), Some(1), "not an orphan");
+        (runtime, orphan, mark)
+    }
+
+    /// Stops the runtime as the app does; whether `orphan` died with it.
+    fn stop_and_check(mut runtime: std::process::Child, orphan: u32, mark: String) -> bool {
         remember(runtime.id(), mark);
         super::super::kill_process_group(runtime.id());
         let _ = runtime.wait();
         // SAFETY: kill(2) with signal 0 only asks whether the pid exists.
         let alive = |pid: u32| unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
-        let mut gone = false;
         for _ in 0..40 {
             if !alive(orphan) {
-                gone = true;
-                break;
+                return true;
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
-        if !gone {
-            // SAFETY: cleanup of the test's own process.
-            unsafe { libc::kill(orphan as libc::pid_t, libc::SIGKILL) };
+        // SAFETY: cleanup of the test's own process.
+        unsafe { libc::kill(orphan as libc::pid_t, libc::SIGKILL) };
+        false
+    }
+
+    /// ADR-0140 (F1): a double fork that leaves the session, loses its
+    /// parent and runs an Apple-signed program with an empty environment
+    /// dies with the runtime too.
+    #[test]
+    fn an_orphan_apple_program_without_the_mark_dies_with_the_runtime() {
+        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let (runtime, orphan, mark) =
+            runtime_with_an_orphan("(version 1)\n(allow default)\n", "/bin/sleep");
+        assert!(
+            stop_and_check(runtime, orphan, mark),
+            "the orphan outlived the runtime"
+        );
+    }
+
+    /// ADR-0140 (M2): a program copied under a name ending in `.xpc` dies
+    /// too: the reaper looks at the profile, not the path.
+    #[test]
+    fn an_orphan_named_like_an_xpc_service_dies_with_the_runtime() {
+        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("wait.c");
+        std::fs::write(
+            &source,
+            "#include <unistd.h>\nint main(void){for(;;)pause();}\n",
+        )
+        .unwrap();
+        let program = dir.path().join("a.xpc/Contents/MacOS/a");
+        std::fs::create_dir_all(program.parent().unwrap()).unwrap();
+        let built = std::process::Command::new("/usr/bin/cc")
+            .arg(&source)
+            .arg("-o")
+            .arg(&program)
+            .status();
+        if !built.is_ok_and(|status| status.success()) {
+            eprintln!("no C compiler here; skipped");
+            return;
         }
-        assert!(gone, "the orphan outlived the runtime");
+        let (runtime, orphan, mark) =
+            runtime_with_an_orphan("(version 1)\n(allow default)\n", &program.to_string_lossy());
+        assert!(
+            stop_and_check(runtime, orphan, mark),
+            "the .xpc copy outlived the runtime"
+        );
+    }
+
+    /// ADR-0140 (M2): an orphan of the app under another profile (as the
+    /// system's WebKit services are) is spared.
+    #[test]
+    fn an_orphan_under_another_profile_is_spared() {
+        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        // As WebKit's profiles do: a list of services, not the jail's marker.
+        let other = "(version 1)\n(allow default)\n(deny mach-lookup)\n(allow mach-lookup (global-name \"com.apple.system.opendirectoryd.libinfo\"))\n";
+        let (runtime, orphan, mark) = runtime_with_an_orphan(other, "/bin/sleep");
+        assert!(
+            !stop_and_check(runtime, orphan, mark),
+            "an orphan of another profile was killed"
+        );
     }
 }

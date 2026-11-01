@@ -26,7 +26,8 @@ fn grants<'a>(
         agent_cli_access,
         working_dir,
         result_dir: None,
-        jail_tmp: None,
+        jail_tmp: temp_roots.first().map(PathBuf::as_path),
+        loopback_ports: &[4242],
     }
 }
 
@@ -34,14 +35,12 @@ const HOME: &str = "/Users/test";
 const HERMES_HOME: &str =
     "/Users/test/Library/Application Support/xyz.carpediem.subrosa/hermes-sandboxed";
 const SHARED_HOME: &str = "/Users/test/Library/Application Support/xyz.carpediem.subrosa/hermes";
+const JAIL_TMP: &str = "/private/var/folders/xy/T/sr-jail";
 const RUNTIME: &str =
     "/Users/test/Library/Application Support/xyz.carpediem.subrosa/hermes-runtime";
 
 fn fixed_profile(agent_cli_access: bool, working_dir: Option<&Path>) -> String {
-    let temp = [
-        PathBuf::from("/private/tmp"),
-        PathBuf::from("/private/var/tmp"),
-    ];
+    let temp = jail_write_temp_roots(Some(Path::new(JAIL_TMP)));
     let closed = [PathBuf::from(SHARED_HOME)];
     build_sandbox_profile(&grants(
         Path::new(HOME),
@@ -54,21 +53,12 @@ fn fixed_profile(agent_cli_access: bool, working_dir: Option<&Path>) -> String {
     ))
 }
 
+/// ADR-0140 (H1): the only temp folder the jail writes is its own.
 #[test]
-fn temp_roots_are_scoped_and_exclude_the_var_folders_blanket() {
-    let roots = sandbox_temp_roots();
-    assert!(roots.contains(&PathBuf::from("/private/tmp")));
-    // The blanket /private/var/folders (parent of every app's caches) must
-    // not be a write root: only this app's $TMPDIR may slip under it.
-    assert!(!roots.contains(&PathBuf::from("/private/var/folders")));
-    for root in &roots {
-        assert!(root != &PathBuf::from("/"), "root / granted");
-        let home = std::env::var_os("HOME").map(PathBuf::from);
-        assert!(
-            Some(root) != home.as_ref(),
-            "home dir granted as a write root"
-        );
-    }
+fn the_jail_writes_no_shared_temp_folder() {
+    let roots = jail_write_temp_roots(Some(Path::new(JAIL_TMP)));
+    assert_eq!(roots, [PathBuf::from(JAIL_TMP)]);
+    assert!(jail_write_temp_roots(None).is_empty());
 }
 
 /// Every path the profile lets the jail write, in the order it appears:
@@ -99,10 +89,7 @@ fn write_grants(profile: &str) -> Vec<String> {
 #[test]
 fn the_write_grants_are_exactly_the_declared_list() {
     let h = HERMES_HOME;
-    let mut expected: Vec<String> = vec![
-        "(subpath \"/private/tmp\")".into(),
-        "(subpath \"/private/var/tmp\")".into(),
-    ];
+    let mut expected: Vec<String> = vec![format!("(subpath \"{JAIL_TMP}\")")];
     for device in [
         "/dev/null",
         "/dev/zero",
@@ -253,6 +240,8 @@ pub(super) struct KernelJail {
     pub shared_home: PathBuf,
     pub runtime_dir: PathBuf,
     pub profile_path: PathBuf,
+    /// The one loopback port its profile lets it reach.
+    pub loopback_port: u16,
 }
 
 impl KernelJail {
@@ -274,9 +263,20 @@ impl KernelJail {
         if let Some(working) = &working {
             std::fs::create_dir_all(working).ok()?;
         }
-        let temp = sandbox_temp_roots();
+        // As validation hands it: canonical (`root/.` is `root`).
+        let working = match working {
+            Some(working) => Some(std::fs::canonicalize(working).ok()?),
+            None => None,
+        };
         let jail_tmp = root.join("jail-tmp");
         std::fs::create_dir_all(&jail_tmp).ok()?;
+        let temp = jail_write_temp_roots(Some(&jail_tmp));
+        // One loopback port the jail may reach (H2), free when picked.
+        let loopback_port = std::net::TcpListener::bind("127.0.0.1:0")
+            .ok()?
+            .local_addr()
+            .ok()?
+            .port();
         let profile = build_sandbox_profile(&SandboxGrants {
             home: &root,
             hermes_home: &hermes_home,
@@ -287,6 +287,7 @@ impl KernelJail {
             working_dir: working.as_deref(),
             result_dir: None,
             jail_tmp: Some(&jail_tmp),
+            loopback_ports: &[loopback_port],
         });
         let profile_path = root.join("profile.sb");
         std::fs::write(&profile_path, profile).ok()?;
@@ -297,6 +298,7 @@ impl KernelJail {
             shared_home,
             runtime_dir,
             profile_path,
+            loopback_port,
         })
     }
 
@@ -956,7 +958,7 @@ fn the_runtime_cannot_write_the_readers_answers() {
     let results = super::reader_result_dir(&home);
     assert_eq!(results.parent(), Some(root.as_path()));
     super::create_private_dir(&results).unwrap();
-    let temp = sandbox_temp_roots();
+    let temp: Vec<PathBuf> = Vec::new();
     let write = |result_dir: Option<&Path>| {
         let profile = root.join("p.sb");
         std::fs::write(
@@ -971,6 +973,7 @@ fn the_runtime_cannot_write_the_readers_answers() {
                 working_dir: None,
                 result_dir,
                 jail_tmp: None,
+                loopback_ports: &[],
             }),
         )
         .unwrap();
@@ -1125,4 +1128,144 @@ fn the_launchd_client_cannot_run_in_the_jail() {
     };
     let out = jail.sh("/bin/launchctl version");
     assert!(!out.status.success(), "launchctl ran in the jail");
+}
+
+/// ADR-0140 (H2): on the loopback, the jail reaches only the ports the app
+/// opens: not a local database's, not one through an IPv4-mapped address.
+#[test]
+fn the_jail_reaches_only_the_loopback_ports_it_is_given() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let allowed = std::net::TcpListener::bind(("127.0.0.1", jail.loopback_port)).unwrap();
+    let other = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let other_port = other.local_addr().unwrap().port();
+    let mapped = std::net::TcpListener::bind("[::]:0").unwrap();
+    let mapped_port = mapped.local_addr().unwrap().port();
+    let probe = format!(
+        "import socket\nfor host, port in (('127.0.0.1', {allowed}), ('127.0.0.1', {other}), ('localhost', {other}), ('::ffff:127.0.0.1', {mapped})):\n    try:\n        socket.create_connection((host, port), timeout=3).close()\n        print('CONNECTED', host, port)\n    except OSError as e:\n        print('refused', host, port, e.errno)\n",
+        allowed = jail.loopback_port,
+        other = other_port,
+        mapped = mapped_port,
+    );
+    let out = Command::new(SANDBOX_EXEC_PATH)
+        .arg("-f")
+        .arg(&jail.profile_path)
+        .args(["/usr/bin/python3", "-I", "-c", &probe])
+        .output()
+        .expect("run the loopback probe");
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        said.contains(&format!("CONNECTED 127.0.0.1 {}", jail.loopback_port)),
+        "{said}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        said.contains(&format!("refused 127.0.0.1 {other_port}")),
+        "{said}"
+    );
+    assert!(
+        said.contains(&format!("refused localhost {other_port}")),
+        "{said}"
+    );
+    assert!(
+        said.contains(&format!("refused ::ffff:127.0.0.1 {mapped_port}")),
+        "{said}"
+    );
+    drop((allowed, other, mapped));
+}
+
+/// An `(allow file-write*)` with no filter allows every write: the profile
+/// never writes one, even with no temp folder at all.
+#[test]
+fn no_grant_is_ever_left_empty() {
+    let closed = [PathBuf::from(SHARED_HOME)];
+    let profile = build_sandbox_profile(&SandboxGrants {
+        home: Path::new(HOME),
+        hermes_home: Path::new(HERMES_HOME),
+        runtime_dir: Path::new(RUNTIME),
+        closed_homes: &closed,
+        temp_roots: &[],
+        agent_cli_access: false,
+        working_dir: None,
+        result_dir: None,
+        jail_tmp: None,
+        loopback_ports: &[],
+    });
+    let lines: Vec<&str> = profile.lines().map(str::trim).collect();
+    for (index, line) in lines.iter().enumerate() {
+        if line.starts_with("(allow ") && !line.ends_with(')') {
+            assert_ne!(lines.get(index + 1), Some(&")"), "empty {line}");
+        }
+        assert!(!line.starts_with("(allow file-write*)"), "{line}");
+        assert!(!line.starts_with("(allow network-outbound)"), "{line}");
+    }
+}
+
+/// ADR-0140 (H1): the jail writes no shared temp folder, so it can neither
+/// carry another program's socket into its own folder (a rename, a hard
+/// link) nor plant a fake server where a terminal multiplexer looks.
+#[test]
+fn no_outside_socket_can_be_carried_into_the_jail() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let outside = std::env::temp_dir().join(format!("sr-h1-{}.sock", std::process::id()));
+    let _ = std::fs::remove_file(&outside);
+    let listener = std::os::unix::net::UnixListener::bind(&outside).unwrap();
+    let carried = jail.root.join("jail-tmp/carried.sock");
+    let linked = jail.root.join("jail-tmp/linked.sock");
+    let planted = PathBuf::from(format!("/private/tmp/sr-h1-tmux-{}", std::process::id()));
+    let probe = "import os, socket, sys\noutside, carried, linked, planted = sys.argv[1:5]\nfor name, act in (('rename', lambda: os.rename(outside, carried)), ('link', lambda: os.link(outside, linked)), ('plant', lambda: os.mkdir(planted))):\n    try:\n        act()\n        print('DONE', name)\n    except OSError as e:\n        print('refused', name)\nfor path in (carried, linked):\n    s = socket.socket(socket.AF_UNIX)\n    try:\n        s.connect(path)\n        print('CONNECTED', path)\n    except OSError:\n        pass\n";
+    let out = Command::new(SANDBOX_EXEC_PATH)
+        .arg("-f")
+        .arg(&jail.profile_path)
+        .args(["/usr/bin/python3", "-I", "-c", probe])
+        .arg(&outside)
+        .arg(&carried)
+        .arg(&linked)
+        .arg(&planted)
+        .output()
+        .expect("run the carry probe");
+    let said = String::from_utf8_lossy(&out.stdout);
+    let _ = std::fs::remove_file(&outside);
+    let _ = std::fs::remove_dir(&planted);
+    drop(listener);
+    for refused in ["refused rename", "refused link", "refused plant"] {
+        assert!(said.contains(refused), "{said}");
+    }
+    assert!(!said.contains("CONNECTED"), "{said}");
+}
+
+/// ADR-0140 (M1): launchd's listeners are refused under `/private/tmp` too.
+#[test]
+fn the_launchd_listeners_are_refused_wherever_they_live() {
+    let profile = fixed_profile(false, None);
+    for place in ["/private/var/run", "/private/tmp"] {
+        let regex = format!(
+            "(remote unix-socket (path-regex #\"^{}/com\\.apple\\.launchd\\.[^/]+/\"))",
+            place
+        );
+        assert!(profile.contains(&regex), "{place}");
+    }
+}
+
+/// ADR-0140 (M2): a process under the jail's profile is told apart by the
+/// marker service the profile allows.
+#[test]
+fn the_reaper_recognizes_the_jails_profile() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let mut jailed = Command::new(SANDBOX_EXEC_PATH)
+        .arg("-f")
+        .arg(&jail.profile_path)
+        .args(["/bin/sleep", "30"])
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let recognized = crate::hermes_bridge::jail_reaper::runs_under_the_jail(jailed.id());
+    let _ = jailed.kill();
+    let _ = jailed.wait();
+    assert!(recognized, "the jail's own process is not recognized");
 }

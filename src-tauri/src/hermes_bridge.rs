@@ -1194,11 +1194,14 @@ async fn start_hermes_bridge_inner(
     let sandbox_profile = if full_mode {
         None
     } else {
+        // The loopback ports it may reach: the app's proxy (models, the
+        // built-in MCP servers) and its own dashboard (H2).
         sandbox_profile::prepare(
             app,
             &hermes_home,
             agent_cli_access,
             custom_working_dir.as_deref(),
+            &[provider_proxy.port, port],
         )
     };
     sandbox_profile::prepare_reader(app, &hermes_home);
@@ -1275,10 +1278,7 @@ async fn start_hermes_bridge_inner(
     let jail_mark = sandboxed.then(jail_reaper::new_mark);
     if let Some(mark) = &jail_mark {
         cmd.env(jail_reaper::JAIL_MARK_ENV, mark);
-        sandbox_profile::apply_jail_env(
-            &mut cmd,
-            sandbox_profile::prepare_jail_tmp().ok().as_deref(),
-        );
+        sandbox_profile::apply_jail_env(&mut cmd, sandbox_profile::jail_tmp_for_env().as_deref());
     }
 
     let mut child = cmd.spawn().map_err(|error| {
@@ -5475,6 +5475,9 @@ fn build_hermes_tui_debug_launcher_script(
             shell_single_quote(hint)
         ));
     }
+    if sandbox_profile.is_some() {
+        script.push_str(&sandbox_profile::jail_env_shell());
+    }
     if let Some(dir) = working_dir {
         // Same cwd as the dashboard spawn for this session, so relative
         // paths in the debugged session resolve identically.
@@ -5548,7 +5551,16 @@ pub async fn open_hermes_tui_debug(
     let sandbox_profile = if full_mode {
         None
     } else {
-        sandbox_profile::prepare(&app, &hermes_home, agent_cli_access, working_dir.as_deref())
+        // The TUI reaches the app's proxy, nothing else on the loopback (H2).
+        let bridge = app.state::<HermesBridge>();
+        let proxy_port = ensure_provider_proxy(&app, &bridge).await?.port;
+        sandbox_profile::prepare(
+            &app,
+            &hermes_home,
+            agent_cli_access,
+            working_dir.as_deref(),
+            &[proxy_port],
+        )
     };
     let sandbox_available = if full_mode {
         sandbox_would_engage(&app, &hermes_home)
@@ -9622,6 +9634,10 @@ mod tests {
         )));
         // Stale inherited values are scrubbed first.
         assert!(script.contains("unset HERMES_HOME"));
+        // The jail's environment, as for the dashboard runtime (B2).
+        assert!(script.contains("unset SSH_AUTH_SOCK"));
+        assert!(script.contains("export TMPDIR="));
+        assert!(script.contains("export SUBROSA_JAIL_MARK='jail-"));
         // The session->TUI trace line is echoed in the terminal.
         assert!(script.contains("echo 'trace: june session sess-1'"));
     }
@@ -9643,6 +9659,7 @@ mod tests {
         // No jail => no sandbox-exec wrapper; the runtime is launched directly.
         assert!(script.contains("exec '/opt/hermes/bin/hermes' '--tui' '--resume' 'sess-2'"));
         assert!(!script.contains(SANDBOX_EXEC_PATH));
+        assert!(!script.contains("SUBROSA_JAIL_MARK"));
         assert!(script.contains(&format!(
             "export HERMES_ENVIRONMENT_HINT={}",
             shell_single_quote(JUNE_HINT_UNRESTRICTED)

@@ -13,7 +13,7 @@ use std::process::{Command, Stdio};
 
 use serde_json::{json, Value};
 
-use super::sandbox_profile::{build_sandbox_profile, sandbox_temp_roots, SandboxGrants};
+use super::sandbox_profile::{build_sandbox_profile, jail_write_temp_roots, SandboxGrants};
 use super::{admin_once, admin_settings, home_prep, SANDBOX_EXEC_PATH};
 
 fn runtime_dir() -> PathBuf {
@@ -31,6 +31,9 @@ struct RealJail {
     home: PathBuf,
     runtime: PathBuf,
     profile: PathBuf,
+    /// The fake model's port and the dashboard's, the only loopback ports
+    /// the profile opens.
+    ports: [u16; 2],
 }
 
 impl RealJail {
@@ -58,9 +61,18 @@ impl RealJail {
         home_prep::write_owned(&home.join("SOUL.md"), "You are Sub Rosa's assistant.\n").unwrap();
         home_prep::prepare(&home).unwrap();
         let person = PathBuf::from(std::env::var_os("HOME").unwrap());
-        let temp = sandbox_temp_roots();
-        // The jail's own temp folder, as the app gives it (M1).
+        // The jail's own temp folder, as the app gives it (M1, H1).
         let jail_tmp = super::sandbox_profile::prepare_jail_tmp().unwrap();
+        let temp = jail_write_temp_roots(Some(&jail_tmp));
+        // The loopback ports the runtime gets (H2): its model's and its own.
+        let free = || {
+            std::net::TcpListener::bind("127.0.0.1:0")
+                .unwrap()
+                .local_addr()
+                .unwrap()
+                .port()
+        };
+        let ports = [free(), free()];
         let profile_text = build_sandbox_profile(&SandboxGrants {
             home: &person,
             hermes_home: &home,
@@ -71,6 +83,7 @@ impl RealJail {
             working_dir: None,
             result_dir: None,
             jail_tmp: Some(&jail_tmp),
+            loopback_ports: &ports,
         });
         let profile = root.join("hermes-sandbox.sb");
         std::fs::write(&profile, profile_text).unwrap();
@@ -79,6 +92,7 @@ impl RealJail {
             home,
             runtime,
             profile,
+            ports,
         }
     }
 
@@ -281,7 +295,7 @@ fn the_runtime_lives_with_its_home_read_only() {
     // The environment the app gives a jailed runtime (M1).
     super::sandbox_profile::apply_jail_env(
         &mut runner,
-        super::sandbox_profile::prepare_jail_tmp().ok().as_deref(),
+        super::sandbox_profile::jail_tmp_for_env().as_deref(),
     );
     let status = runner
         .arg(&script)
@@ -293,6 +307,10 @@ fn the_runtime_lives_with_its_home_read_only() {
         .arg(&jail.home)
         .arg("--out")
         .arg(&out)
+        .arg("--model-port")
+        .arg(jail.ports[0].to_string())
+        .arg("--port")
+        .arg(jail.ports[1].to_string())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
@@ -476,7 +494,8 @@ fn the_jailed_reader_reads_the_sandboxed_home() {
     super::sandbox_profile::create_private_dir(&results).unwrap();
     let results = std::fs::canonicalize(&results).unwrap();
     let person = PathBuf::from(std::env::var_os("HOME").unwrap());
-    let temp = sandbox_temp_roots();
+    let jail_tmp = super::sandbox_profile::prepare_jail_tmp().unwrap();
+    let temp = jail_write_temp_roots(Some(&jail_tmp));
     let shared = jail
         .home
         .parent()
@@ -494,7 +513,8 @@ fn the_jailed_reader_reads_the_sandboxed_home() {
             agent_cli_access: false,
             working_dir: None,
             result_dir: Some(&results),
-            jail_tmp: None,
+            jail_tmp: Some(&jail_tmp),
+            loopback_ports: &[],
         }),
     )
     .unwrap();

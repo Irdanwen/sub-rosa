@@ -55,6 +55,10 @@ SCRIPT = [
     # A unix socket of its own, in its own temp folder (ADR-0140, M1).
     ("write_file", {"path": "mp_probe.py", "content": "import multiprocessing as mp\nif __name__ == '__main__':\n    with mp.Manager() as m:\n        d = m.dict(a=1)\n        print('MP-' + str(d['a']))\n"}, "ok"),
     ("terminal", {"command": "/usr/bin/python3 mp_probe.py"}, "contains:MP-1"),
+    # The loopback only on the ports the app opens, the shared temp folders
+    # closed (ADR-0140, H1, H2).
+    ("terminal", {"command": "curl -s -o /dev/null -m 3 http://127.0.0.1:FORBIDDEN_PORT/ ; echo LOCAL-RC=$?"}, "contains:LOCAL-RC=7"),
+    ("terminal", {"command": "touch /private/tmp/sr-jail-probe; echo TMP-RC=$?"}, "contains:TMP-RC=1"),
     ("terminal", {"command": "curl -s -o /dev/null -w 'CURL-%{http_code}' https://example.com"}, "contains:CURL-200"),
     ("terminal", {"command": "if command -v node >/dev/null; then node -e \"const fs=require('fs');fs.watch('.',()=>{console.log('WATCH-OK');process.exit(0)});let i=0;setInterval(()=>fs.writeFileSync('w'+(i++)+'.tmp','x'),300);setTimeout(()=>process.exit(1),8000)\"; else echo WATCH-OK-NO-NODE; fi"}, "contains:WATCH-OK"),
     ("terminal", {"command": "/usr/bin/open https://example.com; echo OPEN-RC=$?"}, "contains:OPEN-RC=1"),
@@ -79,6 +83,8 @@ SCRIPT = [
 ]
 
 RESULTS = {}
+# A local service the profile does not open (a stand-in for a database).
+FORBIDDEN_PORT = 0
 
 
 def free_port():
@@ -123,7 +129,7 @@ class FakeModel(BaseHTTPRequestHandler):
             name, args, _ = SCRIPT[done]
             delta = {"role": "assistant", "tool_calls": [{
                 "index": 0, "id": f"call_{done}", "type": "function",
-                "function": {"name": name, "arguments": json.dumps(args)},
+                "function": {"name": name, "arguments": json.dumps(args).replace("FORBIDDEN_PORT", str(FORBIDDEN_PORT))},
             }]}
             finish = "tool_calls"
         self.send_response(200)
@@ -222,12 +228,20 @@ def main():
     parser.add_argument("--profile", required=True)
     parser.add_argument("--home", required=True)
     parser.add_argument("--out", required=True)
+    # The loopback ports the profile opens (ADR-0140, H2): the fake model's
+    # and the dashboard's. Picked here when not given.
+    parser.add_argument("--model-port", type=int)
+    parser.add_argument("--port", type=int)
     args = parser.parse_args()
     home = os.path.realpath(args.home)
     work = os.path.join(home, "workspace")
     report = {}
 
-    model_port = free_port()
+    global FORBIDDEN_PORT
+    FORBIDDEN_PORT = free_port()
+    forbidden = ThreadingHTTPServer(("127.0.0.1", FORBIDDEN_PORT), FakeModel)
+    threading.Thread(target=forbidden.serve_forever, daemon=True).start()
+    model_port = args.model_port or free_port()
     server = ThreadingHTTPServer(("127.0.0.1", model_port), FakeModel)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     # What the app writes before a start, outside the jail.
@@ -240,7 +254,7 @@ def main():
         )
     before = snapshot(home)
 
-    port = free_port()
+    port = args.port or free_port()
     token = f"jail-eval-{port}"
     env = {k: v for k, v in os.environ.items() if not k.startswith(("HERMES_", "OPENAI", "ANTHROPIC"))}
     env.update(

@@ -110,36 +110,19 @@ pub(super) struct SandboxGrants<'a> {
     /// home and working folder where it may reach a unix socket (ADR-0140,
     /// M1).
     pub jail_tmp: Option<&'a Path>,
+    /// The loopback ports the jail may connect to (ADR-0140, H2): the app's
+    /// proxy, the runtime's own dashboard, local MCP servers the person set.
+    pub loopback_ports: &'a [u16],
 }
 
-/// The temp folders the jail may write. Canonicalized (macOS resolves
-/// `/tmp` -> `/private/tmp` and `$TMPDIR` under `/private/var/folders`).
-///
-/// Deliberately scoped to `$TMPDIR` (this app's per-session temp dir) rather
-/// than the whole `/private/var/folders` tree, which is the parent of every
-/// other app's caches too.
+/// The temp folders the jail may write (ADR-0140, H1): its own and no other.
+/// Not `/private/tmp`, `/private/var/tmp` or the app's `TMPDIR`: other
+/// programs keep their sockets there (a database, a terminal multiplexer, a
+/// browser bridge), and a jail that may write such a folder may rename one
+/// of them into its own, where it may connect.
 #[cfg(target_os = "macos")]
-pub(super) fn sandbox_temp_roots() -> Vec<PathBuf> {
-    let mut roots = vec![
-        // Shared temp dirs, used mainly as a fallback when $TMPDIR is unset.
-        PathBuf::from("/private/tmp"),
-        PathBuf::from("/private/var/tmp"),
-    ];
-    // The per-session temp dir. The Python runtime and its children use it
-    // for scratch files and multiprocessing sockets.
-    if let Some(tmpdir) = std::env::var_os("TMPDIR") {
-        if !tmpdir.is_empty() {
-            roots.push(PathBuf::from(tmpdir));
-        }
-    }
-    let mut canonical: Vec<PathBuf> = Vec::with_capacity(roots.len());
-    for root in roots {
-        let resolved = std::fs::canonicalize(&root).unwrap_or(root);
-        if !canonical.contains(&resolved) {
-            canonical.push(resolved);
-        }
-    }
-    canonical
+pub(super) fn jail_write_temp_roots(jail_tmp: Option<&Path>) -> Vec<PathBuf> {
+    jail_tmp.map(Path::to_path_buf).into_iter().collect()
 }
 
 /// Renders the profile text. Strategy: allow broadly, because the embedded
@@ -159,16 +142,21 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
     out.push_str(";; denylist. Subprocesses inherit this profile.\n");
     out.push_str("(allow default)\n\n");
 
-    out.push_str(";; Write jail: deny all writes, then re-grant the temp folders.\n");
+    out.push_str(";; Write jail: deny all writes, then re-grant the jail's temp folder.\n");
     out.push_str("(deny file-write*)\n");
-    out.push_str("(allow file-write*\n");
-    for root in grants.temp_roots {
-        out.push_str(&format!(
-            "  (subpath {})\n",
-            sbpl_quote(&root.to_string_lossy())
-        ));
+    // Never an empty `(allow file-write*)`: with no filter it allows every
+    // write.
+    if !grants.temp_roots.is_empty() {
+        out.push_str("(allow file-write*\n");
+        for root in grants.temp_roots {
+            out.push_str(&format!(
+                "  (subpath {})\n",
+                sbpl_quote(&root.to_string_lossy())
+            ));
+        }
+        out.push_str(")\n");
     }
-    out.push_str(")\n\n");
+    out.push('\n');
 
     if let Some(result_dir) = grants.result_dir {
         out.push_str(";; The one-off reader's answer, nothing else of the app's data.\n");
@@ -352,6 +340,12 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
     for name in ALLOWED_MACH_SERVICES {
         out.push_str(&format!("  (global-name {})\n", sbpl_quote(name)));
     }
+    // No service holds it: the kernel's answer for it tells the jail's
+    // processes from any other sandboxed one (`jail_reaper`).
+    out.push_str(&format!(
+        "  (global-name {})\n",
+        sbpl_quote(JAIL_MARKER_SERVICE)
+    ));
     out.push_str(")\n");
     push_unix_socket_rules(&mut out, grants);
     // ADR-0140 (M2): launchd answers `kickstart`, `kill`, `bootout` and
@@ -437,15 +431,43 @@ pub(super) fn prepare(
     hermes_home: &std::path::Path,
     agent_cli_access: bool,
     working_dir: Option<&std::path::Path>,
+    loopback_ports: &[u16],
 ) -> Option<std::path::PathBuf> {
+    let mut ports = loopback_ports.to_vec();
+    ports.extend(local_mcp_ports(hermes_home));
     write_profile(
         app,
         hermes_home,
         agent_cli_access,
         working_dir,
         None,
+        &ports,
         RUNTIME_PROFILE_FILE,
     )
+}
+
+/// The loopback ports of the MCP servers the person set (from the app's
+/// record of their settings): a sandboxed session reaches a local server
+/// only when the person configured it.
+pub(super) fn local_mcp_ports(any_home: &std::path::Path) -> Vec<u16> {
+    let settings = super::admin_settings::load(any_home);
+    let mut ports: Vec<u16> = settings
+        .config
+        .mcp_servers
+        .values()
+        .filter_map(|entry| entry.get("url").and_then(serde_json::Value::as_str))
+        .filter_map(|url| reqwest::Url::parse(url).ok())
+        .filter(|url| {
+            matches!(
+                url.host_str(),
+                Some("127.0.0.1" | "localhost" | "[::1]" | "::1")
+            )
+        })
+        .filter_map(|url| url.port_or_known_default())
+        .collect();
+    ports.sort_unstable();
+    ports.dedup();
+    ports
 }
 
 /// Writes the profile a one-off reader of the sandboxed home runs under
@@ -462,12 +484,16 @@ pub(super) fn prepare_reader(app: &tauri::AppHandle, any_home: &std::path::Path)
         return;
     }
     let results = std::fs::canonicalize(&results).unwrap_or(results);
+    // The reader and a sandboxed sign-in reach only the local MCP servers
+    // the person set.
+    let ports = local_mcp_ports(any_home);
     let _ = write_profile(
         app,
         &sandboxed,
         false,
         None,
         Some(&results),
+        &ports,
         READER_PROFILE_FILE,
     );
 }
@@ -513,6 +539,7 @@ fn write_profile(
     agent_cli_access: bool,
     working_dir: Option<&Path>,
     result_dir: Option<&Path>,
+    loopback_ports: &[u16],
     file_name: &str,
 ) -> Option<PathBuf> {
     // The caller logs the sandboxed/unsandboxed outcome; this only short-circuits.
@@ -532,12 +559,15 @@ fn write_profile(
     } else {
         Vec::new()
     };
-    let temp_roots = sandbox_temp_roots();
     // `working_dir` only ever arrives here through
     // `hermes_working_dir::validate_working_dir` (the spawn re-validates on
     // every start): the "explicit, validated grant" that lets the jail span
     // one user-picked folder without ever widening past it.
+    // ADR-0140 (H1): the only temp folder the jail writes is its own; the
+    // shared ones (`/private/tmp`, `/private/var/tmp`, the app's `TMPDIR`)
+    // hold other programs' sockets, which a rename would carry into it.
     let jail_tmp = prepare_jail_tmp().ok();
+    let temp_roots = jail_write_temp_roots(jail_tmp.as_deref());
     let profile = build_sandbox_profile(&SandboxGrants {
         home: &home,
         hermes_home: &hermes_home,
@@ -548,6 +578,7 @@ fn write_profile(
         working_dir,
         result_dir,
         jail_tmp: jail_tmp.as_deref(),
+        loopback_ports,
     });
     let app_data_dir = crate::app_paths::app_data_dir(app).ok()?;
     if std::fs::create_dir_all(&app_data_dir).is_err() {
@@ -570,10 +601,15 @@ fn write_profile(
     _agent_cli_access: bool,
     _working_dir: Option<&std::path::Path>,
     _result_dir: Option<&std::path::Path>,
+    _loopback_ports: &[u16],
     _file_name: &str,
 ) -> Option<std::path::PathBuf> {
     None
 }
+
+/// A service name only the jail's profiles allow and no service holds: how
+/// the reaper tells a process of the jail (ADR-0140, M2).
+pub(super) const JAIL_MARKER_SERVICE: &str = "xyz.carpediem.subrosa.jail";
 
 /// The unix sockets the jail may connect to (ADR-0140, M1): its own temp
 /// folder, its home, its working folder, name resolution and the system
@@ -616,8 +652,30 @@ fn push_unix_socket_rules(out: &mut String, grants: &SandboxGrants<'_>) {
         ));
     }
     out.push_str("  (remote unix-socket (path-regex #\"^/private/var/run/com\\.apple\\.launchd\\.[^/]+/\"))\n");
+    out.push_str(
+        "  (remote unix-socket (path-regex #\"^/private/tmp/com\\.apple\\.launchd\\.[^/]+/\"))\n",
+    );
     out.push_str("  (remote unix-socket (path-literal \"/private/var/run/docker.sock\"))\n");
     out.push_str(")\n\n");
+    // ADR-0140 (H2): the loopback (and the machine's own addresses, which
+    // the kernel counts as local) only on the ports the app names. IPv6 is
+    // refused outside them: an IPv4-mapped address (`::ffff:127.0.0.1`)
+    // would otherwise reach any local port; clients fall back to IPv4.
+    out.push_str(
+        ";; Loopback: the app's proxy, the runtime's own port, the person's local MCP servers.\n",
+    );
+    out.push_str("(deny network-outbound (remote ip \"localhost:*\"))\n");
+    // Not `(remote ip6 ...)`: measured on macOS 26, that filter makes the
+    // loopback rule above lapse (every local port answered again).
+    out.push_str("(deny network-outbound (remote tcp6 \"*:*\") (remote udp6 \"*:*\"))\n");
+    if !grants.loopback_ports.is_empty() {
+        out.push_str("(allow network-outbound\n");
+        for port in grants.loopback_ports {
+            out.push_str(&format!("  (remote ip \"localhost:{port}\")\n"));
+        }
+        out.push_str(")\n");
+    }
+    out.push('\n');
 }
 
 /// The system sockets the jail may reach: name resolution (`getaddrinfo`
@@ -636,13 +694,24 @@ const CONTAINER_SOCKET_DIRS: &[&str] = &[
     "Library/Containers/com.docker.docker",
 ];
 
+/// The jail's own temp folder's name, short: a unix socket's path in it must
+/// stay under 104 bytes (Python's `multiprocessing` adds about 30).
+pub(super) const JAIL_TMP_NAME: &str = "sr-jail";
+
+/// The jail's temp folder as given in `TMPDIR`: the short, non-canonical
+/// form (`/var/folders/...`), made fresh first.
+pub(super) fn jail_tmp_for_env() -> Option<std::path::PathBuf> {
+    prepare_jail_tmp().ok()?;
+    Some(std::env::temp_dir().join(JAIL_TMP_NAME))
+}
+
 /// The jail's own temp folder, inside the app's: given to the runtime as its
 /// `TMPDIR`. Made fresh by the app (a link or a file in its place is
 /// removed), private to the account.
 pub(super) fn prepare_jail_tmp() -> std::io::Result<std::path::PathBuf> {
     let base = std::env::temp_dir();
     let base = std::fs::canonicalize(&base).unwrap_or(base);
-    let dir = base.join("subrosa-jail");
+    let dir = base.join(JAIL_TMP_NAME);
     if let Ok(meta) = dir.symlink_metadata() {
         if !meta.is_dir() || meta.file_type().is_symlink() {
             std::fs::remove_file(&dir)?;
@@ -662,6 +731,28 @@ pub(super) fn apply_jail_env(cmd: &mut std::process::Command, jail_tmp: Option<&
     if let Some(dir) = jail_tmp {
         cmd.env("TMPDIR", dir);
     }
+}
+
+/// The same environment for a jailed process started by a shell script (the
+/// developer's terminal session, B2): no agent variable, the jail's temp
+/// folder, and a jail mark.
+pub(super) fn jail_env_shell() -> String {
+    let mut lines = String::new();
+    for name in INHERITED_SOCKET_VARS {
+        lines.push_str(&format!("unset {name}\n"));
+    }
+    if let Some(dir) = jail_tmp_for_env() {
+        lines.push_str(&format!(
+            "export TMPDIR='{}'\n",
+            dir.to_string_lossy().replace('\'', "'\\''")
+        ));
+    }
+    lines.push_str(&format!(
+        "export {}='{}'\n",
+        super::jail_reaper::JAIL_MARK_ENV,
+        super::jail_reaper::new_mark()
+    ));
+    lines
 }
 
 /// The variables that point at an agent's or an engine's socket.

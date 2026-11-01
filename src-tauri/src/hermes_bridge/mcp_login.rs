@@ -50,7 +50,7 @@ pub(super) fn build_hermes_mcp_login_command(
         );
         super::sandbox_profile::apply_jail_env(
             &mut cmd,
-            super::sandbox_profile::prepare_jail_tmp().ok().as_deref(),
+            super::sandbox_profile::jail_tmp_for_env().as_deref(),
         );
     }
     cmd

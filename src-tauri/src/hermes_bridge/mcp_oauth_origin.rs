@@ -15,8 +15,10 @@
 //! person, who decides.
 
 use std::collections::HashSet;
-use std::net::IpAddr;
+use std::future::Future;
+use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
+use std::pin::Pin;
 use std::time::Duration;
 
 use reqwest::Url;
@@ -27,12 +29,34 @@ use super::admin_settings;
 /// At most this many authorization servers are asked about.
 const MAX_ISSUERS: usize = 4;
 
+/// Resolves a host name to its addresses (the system's resolver; tests
+/// pass their own).
+pub(super) type Lookup = fn(String, u16) -> Pin<Box<dyn Future<Output = Vec<SocketAddr>> + Send>>;
+
+fn system_lookup(host: String, port: u16) -> Pin<Box<dyn Future<Output = Vec<SocketAddr>> + Send>> {
+    Box::pin(async move {
+        tokio::net::lookup_host((host.as_str(), port))
+            .await
+            .map(|addresses| addresses.collect())
+            .unwrap_or_default()
+    })
+}
+
 /// The address to open, as re-serialized, when it may be opened without
 /// asking; `None` when the person must decide.
 pub(super) async fn openable_authorization_url(
     any_home: &Path,
     server: &str,
     auth_url: &str,
+) -> Option<String> {
+    openable_authorization_url_with(any_home, server, auth_url, system_lookup).await
+}
+
+async fn openable_authorization_url_with(
+    any_home: &Path,
+    server: &str,
+    auth_url: &str,
+    lookup: Lookup,
 ) -> Option<String> {
     let settings = admin_settings::load(any_home);
     let server_url = settings
@@ -43,13 +67,74 @@ pub(super) async fn openable_authorization_url(
         .and_then(Value::as_str)
         .and_then(parse_strict)?;
     let wanted = parse_strict(auth_url)?;
-    if !acceptable(&wanted, &server_url) {
-        return None;
-    }
-    allowed_origins(&server_url)
+    vetted(&wanted, &server_url, lookup).await?;
+    allowed_origins(&server_url, lookup)
         .await
         .contains(&origin_of(&wanted))
         .then(|| wanted.as_str().to_string())
+}
+
+/// The addresses `url` may be reached at (B1): the configured server's own
+/// origin as it resolves; any other only `https`, on a host that is not
+/// local by its text, and whose every resolved address is public (an
+/// IPv4-mapped or NAT64 address judged by the IPv4 inside). The request is
+/// then made to these addresses, never resolved again.
+async fn vetted(url: &Url, server: &Url, lookup: Lookup) -> Option<Vec<SocketAddr>> {
+    let host = url
+        .host_str()?
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_string();
+    let port = url.port_or_known_default()?;
+    let addresses = lookup(host, port).await;
+    if addresses.is_empty() {
+        return None;
+    }
+    if origin_of(url) == origin_of(server) {
+        return Some(addresses);
+    }
+    if url.scheme() != "https" || is_local(url) {
+        return None;
+    }
+    addresses
+        .iter()
+        .all(|address| !ip_is_local(address.ip()))
+        .then_some(addresses)
+}
+
+/// A loopback, private, link-local, shared (100.64/10), unspecified,
+/// broadcast or multicast address, an IPv4-mapped or NAT64 one judged by
+/// the IPv4 inside.
+fn ip_is_local(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => {
+            let [a, b, ..] = ip.octets();
+            ip.is_loopback()
+                || ip.is_private()
+                || ip.is_link_local()
+                || ip.is_unspecified()
+                || ip.is_broadcast()
+                || ip.is_multicast()
+                || a == 0
+                || (a == 100 && (64..128).contains(&b))
+        }
+        IpAddr::V6(ip) => {
+            if let Some(inner) = ip.to_ipv4_mapped() {
+                return ip_is_local(IpAddr::V4(inner));
+            }
+            let segments = ip.segments();
+            if segments[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
+                let octets = ip.octets();
+                let inner = std::net::Ipv4Addr::new(octets[12], octets[13], octets[14], octets[15]);
+                return ip_is_local(IpAddr::V4(inner));
+            }
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || ip.is_multicast()
+                || (segments[0] & 0xfe00) == 0xfc00
+                || (segments[0] & 0xffc0) == 0xfe80
+        }
+    }
 }
 
 /// Parses an address only when its raw text is plain: ASCII, no control
@@ -76,30 +161,21 @@ fn origin_of(url: &Url) -> String {
     url.origin().ascii_serialization()
 }
 
-/// A loopback, private or link-local host, or `localhost`.
+/// A host that is local by its text: `localhost` (with or without a final
+/// dot), a `.localhost` or `.local` name, or a local address literal.
 fn is_local(url: &Url) -> bool {
     let Some(host) = url.host_str() else {
         return true;
     };
-    let bare = host.trim_start_matches('[').trim_end_matches(']');
-    if bare.eq_ignore_ascii_case("localhost")
-        || bare.ends_with(".localhost")
-        || bare.ends_with(".local")
-    {
+    let bare = host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    if bare == "localhost" || bare.ends_with(".localhost") || bare.ends_with(".local") {
         return true;
     }
-    match bare.parse::<IpAddr>() {
-        Ok(IpAddr::V4(ip)) => {
-            ip.is_loopback() || ip.is_private() || ip.is_link_local() || ip.is_unspecified()
-        }
-        Ok(IpAddr::V6(ip)) => {
-            ip.is_loopback()
-                || ip.is_unspecified()
-                || (ip.segments()[0] & 0xfe00) == 0xfc00
-                || (ip.segments()[0] & 0xffc0) == 0xfe80
-        }
-        Err(_) => false,
-    }
+    bare.parse::<IpAddr>().is_ok_and(ip_is_local)
 }
 
 /// An `https` address on a public host, or the configured server's own
@@ -136,25 +212,19 @@ fn issuer_of(raw: &str, server: &Url) -> Option<Url> {
 }
 
 /// The MCP server's own origin, the authorization servers it declares, and
-/// the origin of each one's authorization endpoint.
-async fn allowed_origins(server: &Url) -> HashSet<String> {
+/// the origin of each one's authorization endpoint. Every request goes to
+/// addresses vetted first.
+async fn allowed_origins(server: &Url, lookup: Lookup) -> HashSet<String> {
     let mut allowed = HashSet::new();
     let server_origin = origin_of(server);
     allowed.insert(server_origin.clone());
-    let Ok(client) = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-    else {
-        return allowed;
-    };
     let path = server.path().trim_end_matches('/').to_string();
     let mut issuers = vec![server.clone()];
     for candidate in [
         format!("{server_origin}/.well-known/oauth-protected-resource{path}"),
         format!("{server_origin}/.well-known/oauth-protected-resource"),
     ] {
-        if let Some(metadata) = fetch_json(&client, &candidate).await {
+        if let Some(metadata) = fetch_json(&candidate, server, lookup).await {
             for issuer in metadata
                 .get("authorization_servers")
                 .and_then(Value::as_array)
@@ -177,7 +247,7 @@ async fn allowed_origins(server: &Url) -> HashSet<String> {
             format!("{origin}/.well-known/oauth-authorization-server{issuer_path}"),
             format!("{origin}{issuer_path}/.well-known/openid-configuration"),
         ] {
-            let Some(metadata) = fetch_json(&client, &well_known).await else {
+            let Some(metadata) = fetch_json(&well_known, server, lookup).await else {
                 continue;
             };
             if let Some(endpoint) = metadata
@@ -194,7 +264,24 @@ async fn allowed_origins(server: &Url) -> HashSet<String> {
     allowed
 }
 
-async fn fetch_json(client: &reqwest::Client, url: &str) -> Option<Value> {
+/// One metadata document, fetched at the vetted addresses only.
+async fn fetch_json(raw: &str, server: &Url, lookup: Lookup) -> Option<Value> {
+    let url = parse_strict(raw)?;
+    let addresses = vetted(&url, server, lookup).await?;
+    let host = url
+        .host_str()?
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_string();
+    // Through the app's factory (`tests/egress.rs`): no redirect at all, no
+    // proxy, and the addresses checked above, never resolved again.
+    let client = crate::http_client::build(
+        crate::http_client::anonymous(Duration::from_secs(5))
+            .redirect(reqwest::redirect::Policy::none())
+            .no_proxy()
+            .resolve_to_addrs(&host, &addresses),
+        "MCP sign-in metadata",
+    );
     let response = client.get(url).send().await.ok()?;
     if !response.status().is_success() {
         return None;
@@ -245,6 +332,60 @@ mod tests {
             }
         });
         port
+    }
+
+    /// The names the tests resolve: `*.example.test` to a public address,
+    /// `private.example.test` to a private one, IP literals to themselves.
+    fn test_lookup(
+        host: String,
+        port: u16,
+    ) -> Pin<Box<dyn Future<Output = Vec<SocketAddr>> + Send>> {
+        Box::pin(async move {
+            if let Ok(ip) = host.parse::<IpAddr>() {
+                return vec![SocketAddr::new(ip, port)];
+            }
+            match host.as_str() {
+                "localhost" => vec![SocketAddr::new("127.0.0.1".parse().unwrap(), port)],
+                "private.example.test" => {
+                    vec![
+                        SocketAddr::new("93.184.215.14".parse().unwrap(), port),
+                        SocketAddr::new("10.0.0.7".parse().unwrap(), port),
+                    ]
+                }
+                "mapped.example.test" => {
+                    vec![SocketAddr::new("::ffff:127.0.0.1".parse().unwrap(), port)]
+                }
+                name if name.ends_with(".example.test") => {
+                    vec![SocketAddr::new("93.184.215.14".parse().unwrap(), port)]
+                }
+                _ => Vec::new(),
+            }
+        })
+    }
+
+    /// B1: a name is judged by every address it resolves to, an
+    /// IPv4-mapped or shared (100.64/10) one included, and a host that is
+    /// local by its text never passes.
+    #[tokio::test]
+    async fn a_name_is_judged_by_every_address_it_resolves_to() {
+        let server = parse_strict("https://mcp.example.test/mcp").unwrap();
+        for (raw, passes) in [
+            ("https://login.example.test/a", true),
+            ("https://private.example.test/a", false),
+            ("https://mapped.example.test/a", false),
+            ("https://[::ffff:127.0.0.1]/a", false),
+            ("https://localhost./a", false),
+            ("https://100.64.0.1/a", false),
+            ("https://[64:ff9b::a00:1]/a", false),
+            ("https://[fd00::1]/a", false),
+        ] {
+            let url = parse_strict(raw).unwrap();
+            assert_eq!(
+                vetted(&url, &server, test_lookup).await.is_some(),
+                passes,
+                "{raw}"
+            );
+        }
     }
 
     #[test]
@@ -311,13 +452,19 @@ mod tests {
             ("https://login.example.test\\@evil.test/".to_string(), None),
         ] {
             assert_eq!(
-                openable_authorization_url(&home, "linear", &url).await,
+                openable_authorization_url_with(&home, "linear", &url, test_lookup).await,
                 opened,
                 "{url}"
             );
         }
         assert_eq!(
-            openable_authorization_url(&home, "unknown", "https://login.example.test/a").await,
+            openable_authorization_url_with(
+                &home,
+                "unknown",
+                "https://login.example.test/a",
+                test_lookup
+            )
+            .await,
             None
         );
         // Only the server itself was asked, never a private issuer.
