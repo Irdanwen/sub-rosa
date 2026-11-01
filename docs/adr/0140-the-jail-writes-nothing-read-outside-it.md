@@ -89,7 +89,7 @@ that are not jailed.
    progress by home.
 3. **Inside its own home, the jail writes only its working state.** The
    profile closes the home and the installation as a whole, after every
-   other grant (temp folders, the working folder, the agent CLI opt-in), and
+   other grant (its temp folder, the working folder, the agent CLI opt-in), and
    re-opens only `workspace/`, `sessions/`, `logs/`, `cache/`, `images/`,
    `image_cache/`, `audio_cache/`, `state.db` and its SQLite side files,
    `verification_evidence.db` and its side files, and `auth.lock`. What the
@@ -128,12 +128,16 @@ that are not jailed.
    kills its group and, gathered before, every process descending from it,
    still in its session, or carrying the mark (`SUBROSA_JAIL_MARK`) each
    jailed spawn passes down (`jail_reaper.rs`), and every orphan the app is
-   responsible for that runs under a profile, but the system's XPC services
-   the app uses (WebKit's, under `/System`); a one-off reader's or a
+   responsible for whose profile is the jail's: the kernel is asked whether
+   that process may look up a marker service only the jail's profiles allow
+   (`xyz.carpediem.subrosa.jail`, held by nothing), so the system's
+   services the app uses (WebKit's, under their own profiles) are spared
+   whatever their name or path, and a copy of a program under a `.xpc` name
+   is not (a path asked of another process is always answered "denied",
+   measured; a service name is answered truly). A one-off reader's or a
    sign-in's leftovers die when it ends. What escapes: a process that also
    gave up the app's responsibility (a spawn with the private disclaim
-   attribute) or runs an XPC service's program. It keeps the jail and none
-   of the app's privacy grants.
+   attribute). It keeps the jail and none of the app's privacy grants.
 6. **The jail reaches only the system services it was measured to need.**
    A jailed process inherits the profile, but a service it asks to act runs
    outside it: LaunchServices started an application (`open -n X.app`),
@@ -166,21 +170,51 @@ that are not jailed.
    by a test: launchd refuses `launchctl bootstrap`, `load`, `submit` and
    `setenv` to any sandboxed process; setuid programs (`crontab`, `at`)
    cannot be executed under a profile. What stays reachable, by design: the
-   network over IP, and so any service listening on it (a remote login the
-   person turned on); reading the person's files but for credential stores.
+   network over IP to other machines, and so any service listening there;
+   reading the person's files but for credential stores.
+
+   The temp folders (H1). The jail writes one temp folder, its own
+   (`$TMPDIR/sr-jail`, made fresh by the app and given as its `TMPDIR`,
+   short so a socket path in it stays under 104 bytes), and not
+   `/private/tmp`, `/private/var/tmp` or the app's `TMPDIR`: other programs
+   keep their sockets there (a database's `.s.PGSQL.5432`, a terminal
+   multiplexer's, a browser bridge's), and a jail allowed to write such a
+   folder could rename one of them, or the folder holding it, into its own
+   and connect there (measured by the audit). Nor can it plant a fake
+   server where a multiplexer looks for its own. What breaks: a tool that
+   writes `/tmp` or `/var/tmp` by name rather than through `TMPDIR`.
+
+   The loopback (H2). TCP and UDP to the machine itself (`localhost`,
+   which the kernel matches for 127.0.0.1, `::1` and the machine's own
+   addresses) are refused but for the ports the app names at each start:
+   its proxy (models and the built-in MCP servers), the runtime's own
+   dashboard, and the local MCP servers the person set (from the app's
+   record). Every port is known before the runtime starts; when one
+   changes (the proxy restarted), the runtime is started again with a new
+   profile. IPv6 is refused outside them (`tcp6`, `udp6`): an IPv4-mapped
+   address (`::ffff:127.0.0.1`) would reach any local port, and the
+   `ip6` filter, measured, makes the loopback rule lapse; clients fall back
+   to IPv4 for the internet. What breaks: a local server a sandboxed
+   session starts itself and then calls, a local database, an IPv6-only
+   network. What remains: a service of this machine listening on another
+   machine's reach (all interfaces) is reachable from the network as from
+   any other machine on it.
 
    Unix sockets are a door of their own (M1): the ssh agent behind
    launchd's per-user listener answered the jail, so did gpg's, and a
    container engine's, a terminal multiplexer's or an editor server's
    would run a command outside it. The profile refuses every unix-socket
-   connection but to the jail's own temp folder (its `TMPDIR`,
-   `<temp>/subrosa-jail`, made fresh by the app), its home, its working
+   connection but to the jail's own temp folder, its home, its working
    folder, name resolution (`/private/var/run/mDNSResponder`, without which
    `getaddrinfo` fails) and the system log; and, whatever a grant spans,
    never to a credential store, launchd's listeners
-   (`/private/var/run/com.apple.launchd.*/`), `/private/var/run/docker.sock`
-   or a container engine's folder (Colima, OrbStack, Rancher, Lima,
-   Docker Desktop). A jailed process inherits neither `SSH_AUTH_SOCK`,
+   (`com.apple.launchd.*/` under `/private/var/run` and `/private/tmp`),
+   `/private/var/run/docker.sock` or a container engine's folder (Colima,
+   OrbStack, Rancher, Lima, Docker Desktop). Since the jail writes no
+   shared temp folder (H1), no other program's socket can be brought into
+   those places, and a working folder may be no temp or run folder of the
+   system (`/private/tmp`, `/private/var/tmp`, `/private/var/folders`, the
+   app's `TMPDIR`, `/private/var/run`, nor anything under one). A jailed process inherits neither `SSH_AUTH_SOCK`,
    `GPG_AGENT_INFO`, `DOCKER_HOST` nor a multiplexer's variables. Measured
    without breakage: Python (multiprocessing's own sockets included), Node,
    git and curl over HTTPS, and the runtime's session.
@@ -277,10 +311,14 @@ that are not jailed.
    server it declares (RFC 9728 metadata, then that server's own, at most
    four, none with a query, fragment or dot segment), the server taken from
    the app's record of the person's settings; what opens is the address as
-   the app re-serialized it. A local or private origin (`http`, loopback,
-   private or link-local address) counts only when it is the configured
-   server's own host and port, and no private issuer is ever asked. Any
-   other address is shown to the person with its host, and they decide.
+   the app re-serialized it. A local or private origin counts only when it
+   is the configured server's own host and port: every other address is
+   judged by its text (`localhost`, with or without a final dot, `.local`)
+   and by every address its name resolves to (loopback, private,
+   link-local, 100.64/10, IPv4-mapped and NAT64 judged by the IPv4 inside),
+   and each metadata request goes to the addresses so checked, never
+   resolved again. Any other address is shown to the person with its host,
+   and they decide.
 12. **The copy of the conversations at the split never stops a start.** A
    copy that fails is logged, said in the notice, and tried again at the
    next start while the sandboxed home has no database of its own; until
@@ -326,8 +364,11 @@ that are not jailed.
   the session's environment note tell the assistant so, and to give the
   link or the path instead, and the "In a sandboxed session" line of
   Settings › Agent tells the person. The
-  app still opens the links it shows. Writing a preference fails. The
-  network, TLS and file watching work as before.
+  app still opens the links it shows. Writing a preference fails. Writing
+  `/tmp` or `/var/tmp` by name fails (temp files go to the session's own
+  `TMPDIR`), and so does reaching a local port the app did not open: a
+  local database, a server the session started itself. The internet, TLS
+  and file watching work as before.
 - An MCP sign-in address that is not on the server's own origin, or one it
   declares, is not opened: the server row shows it with its host.
 
@@ -371,7 +412,17 @@ that are not jailed.
   real host, file watching, `open` refused, Accessibility answering no),
   the jailed reader reads the sandboxed home, and every settings change
   succeeds from the app while the same change from the jail is refused
-  (`jail_runtime_tests.rs`, ignored, free). The last pass adds: no agent's,
+  (`jail_runtime_tests.rs`, ignored, free; `runtime_lives.py` now also
+  reaches a real host, refuses a local port it was not given and a write in
+  `/private/tmp`). The sixth pass adds: no outside socket can be renamed or
+  linked into the jail, nor a fake multiplexer planted; only the loopback
+  ports given answer, not one through an IPv4-mapped address; no grant is
+  ever written empty (`sandbox_profile_tests.rs`); a copy under a `.xpc`
+  name dies with the runtime and an orphan of another profile is spared
+  (`jail_reaper.rs`); a temp or run folder is no working folder
+  (`hermes_working_dir.rs`); a name is judged by every address it resolves
+  to (`mcp_oauth_origin.rs`); the developer terminal gets the jail's
+  environment (`hermes_bridge.rs`). The pass before adds: no agent's,
   engine's or multiplexer's unix socket answers the jail while its own do,
   no agent variable is inherited, `launchctl` does not run, a Python that
   resolves users and names still lives (`sandbox_profile_tests.rs`); an
