@@ -127,17 +127,20 @@ that are not jailed.
    would no longer count as going to "others". Stopping a jailed runtime
    kills its group and, gathered before, every process descending from it,
    still in its session, or carrying the mark (`SUBROSA_JAIL_MARK`) each
-   jailed spawn passes down (`jail_reaper.rs`), and every orphan the app is
-   responsible for whose profile is the jail's: the kernel is asked whether
+   jailed spawn passes down (`jail_reaper.rs`), and every orphan whose
+   profile is the jail's, whoever is responsible for it (a spawn with the
+   private disclaim attribute changes nothing): the kernel is asked whether
    that process may look up a marker service only the jail's profiles allow
-   (`xyz.carpediem.subrosa.jail`, held by nothing), so the system's
+   (`xyz.carpediem.subrosa.jail`, held by nothing) and is refused a canary
+   no profile of the jail allows (`xyz.carpediem.subrosa.jail-canary`), so
+   a tool's profile that allows everything is left alone, the system's
    services the app uses (WebKit's, under their own profiles) are spared
    whatever their name or path, and a copy of a program under a `.xpc` name
    is not (a path asked of another process is always answered "denied",
-   measured; a service name is answered truly). A one-off reader's or a
-   sign-in's leftovers die when it ends. What escapes: a process that also
-   gave up the app's responsibility (a spawn with the private disclaim
-   attribute). It keeps the jail and none of the app's privacy grants.
+   measured; a service name is answered truly). The orphans are asked for
+   again until none is left. A one-off reader's or a sign-in's leftovers
+   die when it ends. A jailed process cannot change its profile, so it
+   cannot stop answering as the jail's.
 6. **The jail reaches only the system services it was measured to need.**
    A jailed process inherits the profile, but a service it asks to act runs
    outside it: LaunchServices started an application (`open -n X.app`),
@@ -181,8 +184,14 @@ that are not jailed.
    multiplexer's, a browser bridge's), and a jail allowed to write such a
    folder could rename one of them, or the folder holding it, into its own
    and connect there (measured by the audit). Nor can it plant a fake
-   server where a multiplexer looks for its own. What breaks: a tool that
-   writes `/tmp` or `/var/tmp` by name rather than through `TMPDIR`.
+   server where a multiplexer looks for its own. The folder's own name (and
+   the reader's answer folder's) is closed to the jail (`(literal ...)` after
+   the grant): it writes inside, never removes, renames or chmods the
+   folder, nor puts a link in its place; and the app makes it without
+   following a link (made with its mode, opened `O_NOFOLLOW|O_DIRECTORY`,
+   its mode set on that descriptor, checked as a folder of this account).
+   What breaks: a tool that writes `/tmp` or `/var/tmp` by name rather than
+   through `TMPDIR`.
 
    The loopback (H2). TCP and UDP to the machine itself (`localhost`,
    which the kernel matches for 127.0.0.1, `::1` and the machine's own
@@ -198,7 +207,14 @@ that are not jailed.
    session starts itself and then calls, a local database, an IPv6-only
    network. What remains: a service of this machine listening on another
    machine's reach (all interfaces) is reachable from the network as from
-   any other machine on it.
+   any other machine on it. And a limit of the rule language: a network
+   filter names only `*` or `localhost` (measured: "host must be * or
+   localhost"), so the machine's other addresses are refused only as far as
+   the kernel counts them as `localhost`. Measured: 127.0.0.1, `0.0.0.0` and
+   the Wi-Fi address (en0) are; a VPN or Tailscale interface's address and
+   a `lo0` alias (127.0.0.2, which needs root to exist) could not be
+   measured here, none being up. A sign-in address, on the other hand, is
+   accepted only on a public, global unicast address.
 
    Unix sockets are a door of their own (M1): the ssh agent behind
    launchd's per-user listener answered the jail, so did gpg's, and a
@@ -210,7 +226,9 @@ that are not jailed.
    never to a credential store, launchd's listeners
    (`com.apple.launchd.*/` under `/private/var/run` and `/private/tmp`),
    `/private/var/run/docker.sock` or a container engine's folder (Colima,
-   OrbStack, Rancher, Lima, Docker Desktop). Since the jail writes no
+   OrbStack, Rancher, Lima), every app's container and group container
+   (`~/Library/Containers`, `~/Library/Group Containers`, Docker Desktop's
+   among them) and Podman's (`~/.local/share/containers`). Since the jail writes no
    shared temp folder (H1), no other program's socket can be brought into
    those places, and a working folder may be no temp or run folder of the
    system (`/private/tmp`, `/private/var/tmp`, `/private/var/folders`, the
@@ -314,8 +332,11 @@ that are not jailed.
    the app re-serialized it. A local or private origin counts only when it
    is the configured server's own host and port: every other address is
    judged by its text (`localhost`, with or without a final dot, `.local`)
-   and by every address its name resolves to (loopback, private,
-   link-local, 100.64/10, IPv4-mapped and NAT64 judged by the IPv4 inside),
+   and by every address its name resolves to, which must all be public
+   global unicast (IPv4 outside the reserved ranges, IPv6 within 2000::/3
+   outside Teredo, documentation and 6to4; an IPv4-mapped one judged by the
+   IPv4 inside; IPv4-compatible, NAT64, site-local, unique local and
+   link-local refused),
    and each metadata request goes to the addresses so checked, never
    resolved again. Any other address is shown to the person with its host,
    and they decide.
@@ -422,7 +443,12 @@ that are not jailed.
   (`jail_reaper.rs`); a temp or run folder is no working folder
   (`hermes_working_dir.rs`); a name is judged by every address it resolves
   to (`mcp_oauth_origin.rs`); the developer terminal gets the jail's
-  environment (`hermes_bridge.rs`). The pass before adds: no agent's,
+  environment (`hermes_bridge.rs`). The seventh: the jail cannot remove,
+  rename, chmod or replace its temp folder, and the app never makes one
+  through a link; no app container's socket answers; a disclaimed orphan
+  dies and an allow-everything profile is spared (`jail_reaper.rs`); only
+  a public global unicast address passes (`mcp_oauth_origin.rs`). The pass
+  before adds: no agent's,
   engine's or multiplexer's unix socket answers the jail while its own do,
   no agent variable is inherited, `launchctl` does not run, a Python that
   resolves users and names still lives (`sandbox_profile_tests.rs`); an
