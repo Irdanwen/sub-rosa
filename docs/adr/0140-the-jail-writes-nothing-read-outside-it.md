@@ -101,11 +101,18 @@ that are not jailed.
    dashboard, a session, and a turn played by a local fake model calling
    terminal, background process, file read, write, patch and search, todo,
    skills, session search, delegation and an image attachment;
-   `scripts/jail-eval/runtime_lives.py` repeats that run as a test. In the
-   re-opened state no link, pipe or socket may be made (the workspace keeps
-   links, but for its `uploads`), a re-opened folder's own name can be
-   neither replaced by a link nor removed or renamed over, and links left
-   from before are swept at every start.
+   `scripts/jail-eval/runtime_lives.py` repeats that run as a test. What the
+   rules guarantee, exactly: in the re-opened state other than the
+   workspace (and in the workspace's `uploads`), the kernel refuses to
+   create a symbolic link, a pipe or a socket (`file-write-create` of those
+   node types) and to make a hard link (`file-link`); the workspace itself
+   is the session's folder and may hold all of them, since nothing outside
+   the jail opens its files by name with authority (the app writes uploads
+   as new files only). The name of each re-opened folder cannot be created
+   as a symbolic link, nor removed or renamed (`file-write-unlink` on that
+   name), so no folder of the jail's choosing takes its place. Links,
+   second names, pipes, sockets and devices left from before are removed
+   at every start of the sandboxed home.
 4. **The runtime's installation is not a write root** (as in the CLI's own
    profile).
 5. **No signal leaves the jail.** The profile refuses signals to other
@@ -120,11 +127,13 @@ that are not jailed.
    would no longer count as going to "others". Stopping a jailed runtime
    kills its group and, gathered before, every process descending from it,
    still in its session, or carrying the mark (`SUBROSA_JAIL_MARK`) each
-   jailed spawn passes down (`jail_reaper.rs`); a one-off reader's or a
-   sign-in's leftovers die when it ends. What escapes: a process that left
-   the session, whose parent is gone, and whose environment the system
-   hides (Apple-signed programs) or no longer carries the mark. It keeps
-   the jail and none of the app's privacy grants.
+   jailed spawn passes down (`jail_reaper.rs`), and every orphan the app is
+   responsible for that runs under a profile, but the system's XPC services
+   the app uses (WebKit's, under `/System`); a one-off reader's or a
+   sign-in's leftovers die when it ends. What escapes: a process that also
+   gave up the app's responsibility (a spawn with the private disclaim
+   attribute) or runs an XPC service's program. It keeps the jail and none
+   of the app's privacy grants.
 6. **The jail reaches only the system services it was measured to need.**
    A jailed process inherits the profile, but a service it asks to act runs
    outside it: LaunchServices started an application (`open -n X.app`),
@@ -157,8 +166,36 @@ that are not jailed.
    by a test: launchd refuses `launchctl bootstrap`, `load`, `submit` and
    `setenv` to any sandboxed process; setuid programs (`crontab`, `at`)
    cannot be executed under a profile. What stays reachable, by design: the
-   network, and so any service listening on it (a remote login the person
-   turned on); reading the person's files but for credential stores.
+   network over IP, and so any service listening on it (a remote login the
+   person turned on); reading the person's files but for credential stores.
+
+   Unix sockets are a door of their own (M1): the ssh agent behind
+   launchd's per-user listener answered the jail, so did gpg's, and a
+   container engine's, a terminal multiplexer's or an editor server's
+   would run a command outside it. The profile refuses every unix-socket
+   connection but to the jail's own temp folder (its `TMPDIR`,
+   `<temp>/subrosa-jail`, made fresh by the app), its home, its working
+   folder, name resolution (`/private/var/run/mDNSResponder`, without which
+   `getaddrinfo` fails) and the system log; and, whatever a grant spans,
+   never to a credential store, launchd's listeners
+   (`/private/var/run/com.apple.launchd.*/`), `/private/var/run/docker.sock`
+   or a container engine's folder (Colima, OrbStack, Rancher, Lima,
+   Docker Desktop). A jailed process inherits neither `SSH_AUTH_SOCK`,
+   `GPG_AGENT_INFO`, `DOCKER_HOST` nor a multiplexer's variables. Measured
+   without breakage: Python (multiprocessing's own sockets included), Node,
+   git and curl over HTTPS, and the runtime's session.
+
+   launchd answers `launchctl kickstart`, `kill`, `bootout` and `disable`
+   from a sandboxed process (measured on a test agent the measurement
+   created and removed): they go over the bootstrap port every process
+   holds, which no profile rule filters (`mach-bootstrap`, `job-creation`,
+   `system-privilege`, `mach-priv*` and others measured, none refuses them;
+   `process-info*` only crashes the client). The profile refuses running
+   `/bin/launchctl`, and a copy of it is killed by the system for leaving
+   its signed place. What remains: a program that speaks launchd's private
+   protocol itself could stop, restart or disable one of the person's
+   agents or the app (availability, not a program run outside the jail:
+   launchd starts only what an agent already declares).
 
    Starting the jail with the app's privacy responsibility disclaimed
    (`responsibility_spawnattrs_setdisclaim`) was measured too: it also makes
@@ -226,18 +263,24 @@ that are not jailed.
    the items they choose, one by one, after a confirmation that lists what
    will run outside the sandbox again: the app moves them from
    `quarantine/<date>/` into the shared home, outside the jail, and the
-   gateway is restarted to take them. A link, or a folder holding one, is
-   never put back.
+   gateway is restarted to take them. A link, a pipe, a socket or a device,
+   or a folder holding one, is never put back. The app writes a file it
+   owns only when no folder on the way from the home is a link.
 11. **Each side signs in to an MCP server on its own.** `mcp login` runs in
    the home of the session that asks, under the reader's jail for a
    sandboxed one; its tokens stay in that home (`mcp-tokens/`, runtime
    state). No refresh token is copied from the shared home into the jail's,
    so nothing the unrestricted side was granted becomes the jail's. The
-   authorization address the sign-in prints opens by itself only when its
-   origin is the MCP server's own or an authorization server it declares
-   (RFC 9728 metadata, then that server's own), the server taken from the
-   app's record of the person's settings; any other address is shown to the
-   person with its host, and they decide.
+   authorization address the sign-in prints opens by itself only when it is
+   a plain address (ASCII, no control character, backslash or user
+   information) whose origin is the MCP server's own or an authorization
+   server it declares (RFC 9728 metadata, then that server's own, at most
+   four, none with a query, fragment or dot segment), the server taken from
+   the app's record of the person's settings; what opens is the address as
+   the app re-serialized it. A local or private origin (`http`, loopback,
+   private or link-local address) counts only when it is the configured
+   server's own host and port, and no private issuer is ever asked. Any
+   other address is shown to the person with its host, and they decide.
 12. **The copy of the conversations at the split never stops a start.** A
    copy that fails is logged, said in the notice, and tried again at the
    next start while the sandboxed home has no database of its own; until
@@ -278,8 +321,11 @@ that are not jailed.
 - In a sandboxed session, opening a link, a file or an application from a
   tool (`open`, the runtime's own browser opening, `osascript`, Shortcuts),
   the clipboard (`pbcopy`, `pbpaste`), notifications, screenshots and
-  simulated keys or clicks fail; the soul and the session's environment
-  note tell the assistant so, and to give the link or the path instead. The
+  simulated keys or clicks fail, as do the person's ssh and gpg agents,
+  container engines, terminal multiplexers and editor servers; the soul and
+  the session's environment note tell the assistant so, and to give the
+  link or the path instead, and the "In a sandboxed session" line of
+  Settings › Agent tells the person. The
   app still opens the links it shows. Writing a preference fails. The
   network, TLS and file watching work as before.
 - An MCP sign-in address that is not on the server's own origin, or one it
@@ -325,8 +371,18 @@ that are not jailed.
   real host, file watching, `open` refused, Accessibility answering no),
   the jailed reader reads the sandboxed home, and every settings change
   succeeds from the app while the same change from the jail is refused
-  (`jail_runtime_tests.rs`, ignored, free). Each test was checked by
-  breaking the rule it holds.
+  (`jail_runtime_tests.rs`, ignored, free). The last pass adds: no agent's,
+  engine's or multiplexer's unix socket answers the jail while its own do,
+  no agent variable is inherited, `launchctl` does not run, a Python that
+  resolves users and names still lives (`sandbox_profile_tests.rs`); an
+  orphan Apple program without the mark dies with the runtime
+  (`jail_reaper.rs`); a pipe or a socket is never put back
+  (`quarantine.rs`); a link higher on the way to an owned file is refused,
+  the guard plugin is never written through a linked `plugins`
+  (`home_prep.rs`, `guard.rs`); a session identifier is taken exactly or
+  refused (`session_owner.rs`); only a plain address opens, as
+  re-serialized, and no private issuer is asked (`mcp_oauth_origin.rs`).
+  Each test was checked by breaking the rule it holds.
 
 ## Alternatives rejected
 
