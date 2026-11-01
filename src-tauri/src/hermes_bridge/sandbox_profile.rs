@@ -376,6 +376,27 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
     out.push_str("(deny file-write*\n");
     push_secret_stores(&mut out, home);
     out.push_str(")\n");
+    // ADR-0140 (7th pass): the name of the jail's temp folder and of the
+    // reader's answer folder is the app's: the jail may write inside, never
+    // remove the folder, chmod it or put a link in its place, which the app
+    // would then follow when it makes the folder again.
+    let own_folders: Vec<&Path> = grants
+        .temp_roots
+        .iter()
+        .map(PathBuf::as_path)
+        .chain(grants.result_dir)
+        .collect();
+    if !own_folders.is_empty() {
+        out.push_str(";; The jail's own folders: written inside, never replaced.\n");
+        out.push_str("(deny file-write*\n");
+        for folder in own_folders {
+            out.push_str(&format!(
+                "  (literal {})\n",
+                sbpl_quote(&folder.to_string_lossy())
+            ));
+        }
+        out.push_str(")\n");
+    }
     out
 }
 
@@ -508,14 +529,53 @@ pub(super) fn reader_result_dir(any_home: &std::path::Path) -> std::path::PathBu
 }
 
 /// A folder only this account may open.
+///
+/// Never through a link (7th pass): a link or a file in its place is
+/// removed, the folder is made with that mode, then opened without
+/// following a link and its mode set on that descriptor, and it must be a
+/// folder of this account. A jail that put a link there cannot have the app
+/// change another folder.
 pub(super) fn create_private_dir(dir: &std::path::Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dir)?;
+    if let Some(parent) = dir.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    if let Ok(meta) = dir.symlink_metadata() {
+        if meta.file_type().is_symlink() || !meta.is_dir() {
+            std::fs::remove_file(dir)?;
+        }
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+        use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, OpenOptionsExt as _};
+        match std::fs::DirBuilder::new().mode(0o700).create(dir) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+        let folder = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc_nofollow_directory())
+            .open(dir)?;
+        let meta = folder.metadata()?;
+        // SAFETY: getuid(2) takes nothing and cannot fail.
+        if !meta.is_dir() || meta.uid() != unsafe { libc::getuid() } {
+            return Err(std::io::Error::other(format!(
+                "{} is not a folder of this account",
+                dir.display()
+            )));
+        }
+        folder.set_permissions(std::fs::Permissions::from_mode(0o700))?;
     }
+    #[cfg(not(unix))]
+    std::fs::create_dir_all(dir)?;
     Ok(())
+}
+
+/// `O_NOFOLLOW | O_DIRECTORY`.
+#[cfg(unix)]
+fn libc_nofollow_directory() -> i32 {
+    libc::O_NOFOLLOW | libc::O_DIRECTORY
 }
 
 /// Whether sandboxed processes on this machine run under the jail: then a
@@ -611,6 +671,10 @@ fn write_profile(
 /// the reaper tells a process of the jail (ADR-0140, M2).
 pub(super) const JAIL_MARKER_SERVICE: &str = "xyz.carpediem.subrosa.jail";
 
+/// A service name the jail's profile never allows (and no service holds): a
+/// profile that allows it allows everything, so it is not the jail's.
+pub(super) const JAIL_CANARY_SERVICE: &str = "xyz.carpediem.subrosa.jail-canary";
+
 /// The unix sockets the jail may connect to (ADR-0140, M1): its own temp
 /// folder, its home, its working folder, name resolution and the system
 /// log. Not an agent's (ssh, gpg), a container engine's (Docker, Colima,
@@ -691,7 +755,11 @@ const CONTAINER_SOCKET_DIRS: &[&str] = &[
     ".orbstack",
     ".rd",
     ".lima",
-    "Library/Containers/com.docker.docker",
+    // Every app's sandbox container and group container, Docker Desktop's
+    // among them, and Podman's sockets.
+    "Library/Containers",
+    "Library/Group Containers",
+    ".local/share/containers",
 ];
 
 /// The jail's own temp folder's name, short: a unix socket's path in it must
@@ -712,11 +780,6 @@ pub(super) fn prepare_jail_tmp() -> std::io::Result<std::path::PathBuf> {
     let base = std::env::temp_dir();
     let base = std::fs::canonicalize(&base).unwrap_or(base);
     let dir = base.join(JAIL_TMP_NAME);
-    if let Ok(meta) = dir.symlink_metadata() {
-        if !meta.is_dir() || meta.file_type().is_symlink() {
-            std::fs::remove_file(&dir)?;
-        }
-    }
     create_private_dir(&dir)?;
     Ok(dir)
 }

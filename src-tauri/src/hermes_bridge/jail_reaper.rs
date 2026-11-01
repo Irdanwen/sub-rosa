@@ -11,15 +11,13 @@
 //!
 //! And, for what escapes those three (a double fork that leaves the session,
 //! loses its parent and runs an Apple-signed program, whose environment the
-//! system hides): every orphan the app is responsible for whose profile is
-//! the jail's, which the kernel tells by whether it may look up the jail's
-//! marker service; the system's services the app uses (WebKit's) run under
+//! system hides): every orphan whose profile is the jail's, whoever is
+//! responsible for it, which the kernel tells by whether it may look up the
+//! jail's marker service and not its canary, asked again until none is left; the system's services the app uses (WebKit's) run under
 //! their own profiles and are spared, whatever their name or path.
 //!
-//! What stays out of reach: a process that also gave up the app's
-//! responsibility (a spawn with the private disclaim attribute). It still
-//! runs under the jail, with none of the app's privacy grants (ADR-0140,
-//! D2), and nothing restarts it.
+//! What stays out of reach: nothing measured. A jailed process cannot change
+//! its profile, so it cannot stop answering as the jail's.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -83,6 +81,9 @@ impl Doomed {
         }
         if let Some(mark) = self.mark {
             killed += reap_mark(&mark);
+            // What the kills just orphaned, under the jail: asked again
+            // until none is left.
+            killed += reap_jailed_orphans();
         }
         killed
     }
@@ -121,6 +122,34 @@ pub(super) fn reap_mark(_mark: &str) -> usize {
     0
 }
 
+/// Kills every orphan running under the jail's profile, until none is left.
+#[cfg(target_os = "macos")]
+fn reap_jailed_orphans() -> usize {
+    let own = std::process::id();
+    let mut killed = 0;
+    for _ in 0..5 {
+        let found: Vec<u32> = all_pids()
+            .into_iter()
+            .filter(|pid| *pid != own && parent_of(*pid) == Some(1) && runs_under_the_jail(*pid))
+            .collect();
+        if found.is_empty() {
+            break;
+        }
+        for pid in found {
+            if kill_one(pid) {
+                killed += 1;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    killed
+}
+
+#[cfg(not(target_os = "macos"))]
+fn reap_jailed_orphans() -> usize {
+    0
+}
+
 #[cfg(target_os = "macos")]
 fn mark_needle(mark: &str) -> Vec<u8> {
     format!("{JAIL_MARK_ENV}={mark}\0").into_bytes()
@@ -131,11 +160,6 @@ fn mark_needle(mark: &str) -> Vec<u8> {
 #[cfg(target_os = "macos")]
 fn gather(leader: u32, mark: &str) -> Vec<u32> {
     let own = std::process::id();
-    // The app is its own responsible process when the system started it;
-    // started from a terminal (development), the terminal is.
-    // SAFETY: a pid in, a pid out.
-    let responsible_for_app =
-        unsafe { responsibility_get_pid_responsible_for_pid(own as libc::pid_t) } as u32;
     let needle = mark_needle(mark);
     let table: Vec<(u32, u32)> = all_pids()
         .into_iter()
@@ -148,7 +172,7 @@ fn gather(leader: u32, mark: &str) -> Vec<u32> {
             let session = unsafe { libc::getsid(*pid as libc::pid_t) };
             session == leader as libc::pid_t
                 || environment_holds(*pid, &needle)
-                || (*parent == 1 && jailed_orphan_of_this_app(*pid, responsible_for_app))
+                || (*parent == 1 && runs_under_the_jail(*pid))
         })
         .map(|(pid, _)| *pid)
         .collect();
@@ -179,46 +203,39 @@ extern "C" {
         filter: libc::c_int,
         ...
     ) -> libc::c_int;
-    fn responsibility_get_pid_responsible_for_pid(pid: libc::pid_t) -> libc::pid_t;
 }
 
-/// An orphan whose responsible process is the app's (`app`) and that runs
-/// under the jail's own profile (M2). The kernel is asked whether that
-/// process may look up the jail's marker service, a name only the jail's
-/// profiles allow (and no service holds). The system's XPC services the app
-/// uses (WebKit's) run under their own profiles and are spared, whatever
-/// their path; a copy of a program under a name ending in `.xpc` is not.
-#[cfg(target_os = "macos")]
-fn jailed_orphan_of_this_app(pid: u32, app: u32) -> bool {
-    // SAFETY: a pid in, a pid out.
-    let responsible = unsafe { responsibility_get_pid_responsible_for_pid(pid as libc::pid_t) };
-    responsible == app as libc::pid_t && runs_under_the_jail(pid)
-}
-
-/// Whether `pid` runs under the jail's profile: sandboxed, and allowed the
-/// marker service. (A path asked of another process is answered "denied"
-/// whatever its profile, measured; a service name is answered truly.)
+/// Whether `pid` runs under the jail's profile (M2, 7th pass): sandboxed,
+/// allowed the jail's marker service and refused its canary. Only the
+/// jail's profile allows the marker; a profile that allows everything (a
+/// tool's `(allow default)`) also allows the canary and is left alone.
+/// Whoever is responsible for the process (it may have disclaimed the app)
+/// does not matter. A path asked of another process is answered "denied"
+/// whatever its profile, measured; a service name is answered truly.
 #[cfg(target_os = "macos")]
 pub(super) fn runs_under_the_jail(pid: u32) -> bool {
     const SANDBOX_FILTER_GLOBAL_NAME: libc::c_int = 2;
     const SANDBOX_CHECK_NO_REPORT: libc::c_int = 0x4000_0000;
-    let Ok(marker) = std::ffi::CString::new(super::sandbox_profile::JAIL_MARKER_SERVICE) else {
-        return false;
-    };
-    // SAFETY: the operation and the name are NUL-terminated and outlive the
-    // call; the check reads the kernel's answer for that process.
-    let (sandboxed, marked) = unsafe {
-        (
-            sandbox_check(pid as libc::pid_t, std::ptr::null(), 0),
+    let allowed = |name: &str| {
+        let Ok(name) = std::ffi::CString::new(name) else {
+            return false;
+        };
+        // SAFETY: the operation and the name are NUL-terminated and outlive
+        // the call; the check reads the kernel's answer for that process.
+        unsafe {
             sandbox_check(
                 pid as libc::pid_t,
                 c"mach-lookup".as_ptr(),
                 SANDBOX_FILTER_GLOBAL_NAME | SANDBOX_CHECK_NO_REPORT,
-                marker.as_ptr(),
-            ),
-        )
+                name.as_ptr(),
+            ) == 0
+        }
     };
-    sandboxed > 0 && marked == 0
+    // SAFETY: no operation: only whether a profile applies.
+    let sandboxed = unsafe { sandbox_check(pid as libc::pid_t, std::ptr::null(), 0) } > 0;
+    sandboxed
+        && allowed(super::sandbox_profile::JAIL_MARKER_SERVICE)
+        && !allowed(super::sandbox_profile::JAIL_CANARY_SERVICE)
 }
 
 #[cfg(target_os = "macos")]
@@ -359,7 +376,30 @@ mod tests {
     /// A runtime under `profile` whose child double-forks, leaves the
     /// session and execs `program` with an empty environment: an orphan of
     /// launchd without the mark. Returns the runtime and the orphan's pid.
+    /// A profile like the jail's as the reaper sees it: the marker allowed,
+    /// the canary refused.
+    fn jail_like() -> String {
+        format!(
+            "(version 1)\n(allow default)\n(deny mach-lookup (global-name \"{}\"))\n",
+            super::super::sandbox_profile::JAIL_CANARY_SERVICE
+        )
+    }
+
+    const DOUBLE_FORK: &str = "import os,sys,time\nif os.fork() == 0:\n    os.setsid()\n    if os.fork() == 0:\n        open(sys.argv[1], 'w').write(str(os.getpid()))\n        os.execve(sys.argv[2], [sys.argv[2], '120'], {})\n    os._exit(0)\ntime.sleep(120)\n";
+
+    /// The child gives up the app's responsibility (the private disclaim
+    /// attribute) and its session in one `posix_spawn`, with no environment.
+    const DISCLAIMED_SPAWN: &str = "import ctypes,os,sys,time\nlibc = ctypes.CDLL(None)\nif os.fork() == 0:\n    attr = ctypes.c_void_p()\n    libc.posix_spawnattr_init(ctypes.byref(attr))\n    d = libc.responsibility_spawnattrs_setdisclaim\n    d.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_int]\n    d(ctypes.byref(attr), 1)\n    libc.posix_spawnattr_setflags.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_short]\n    libc.posix_spawnattr_setflags(ctypes.byref(attr), 0x0400)\n    prog = sys.argv[2].encode()\n    argv = (ctypes.c_char_p * 3)(prog, b'120', None)\n    envp = (ctypes.c_char_p * 1)(None)\n    pid = ctypes.c_int()\n    libc.posix_spawn.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.c_char_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, ctypes.c_void_p]\n    libc.posix_spawn(ctypes.byref(pid), prog, None, ctypes.byref(attr), argv, envp)\n    open(sys.argv[1], 'w').write(str(pid.value))\n    os._exit(0)\ntime.sleep(120)\n";
+
     fn runtime_with_an_orphan(profile: &str, program: &str) -> (std::process::Child, u32, String) {
+        runtime_with_an_orphan_by(profile, program, DOUBLE_FORK)
+    }
+
+    fn runtime_with_an_orphan_by(
+        profile: &str,
+        program: &str,
+        script: &str,
+    ) -> (std::process::Child, u32, String) {
         let mark = new_mark();
         let pid_file = tempfile::NamedTempFile::new().unwrap();
         let profile_file = tempfile::NamedTempFile::new().unwrap();
@@ -368,12 +408,7 @@ mod tests {
         runtime
             .arg("-f")
             .arg(profile_file.path())
-            .args([
-                "/usr/bin/python3",
-                "-I",
-                "-c",
-                "import os,sys,time\nif os.fork() == 0:\n    os.setsid()\n    if os.fork() == 0:\n        open(sys.argv[1], 'w').write(str(os.getpid()))\n        os.execve(sys.argv[2], [sys.argv[2], '120'], {})\n    os._exit(0)\ntime.sleep(120)\n",
-            ])
+            .args(["/usr/bin/python3", "-I", "-c", script])
             .arg(pid_file.path())
             .arg(program)
             .env(JAIL_MARK_ENV, &mark);
@@ -424,8 +459,7 @@ mod tests {
     #[test]
     fn an_orphan_apple_program_without_the_mark_dies_with_the_runtime() {
         let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
-        let (runtime, orphan, mark) =
-            runtime_with_an_orphan("(version 1)\n(allow default)\n", "/bin/sleep");
+        let (runtime, orphan, mark) = runtime_with_an_orphan(&jail_like(), "/bin/sleep");
         assert!(
             stop_and_check(runtime, orphan, mark),
             "the orphan outlived the runtime"
@@ -456,10 +490,35 @@ mod tests {
             return;
         }
         let (runtime, orphan, mark) =
-            runtime_with_an_orphan("(version 1)\n(allow default)\n", &program.to_string_lossy());
+            runtime_with_an_orphan(&jail_like(), &program.to_string_lossy());
         assert!(
             stop_and_check(runtime, orphan, mark),
             "the .xpc copy outlived the runtime"
+        );
+    }
+
+    /// 7th pass: an orphan that gave up the app's responsibility (disclaim)
+    /// and its session in one spawn, with no environment, dies too.
+    #[test]
+    fn a_disclaimed_orphan_dies_with_the_runtime() {
+        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let (runtime, orphan, mark) =
+            runtime_with_an_orphan_by(&jail_like(), "/bin/sleep", DISCLAIMED_SPAWN);
+        assert!(
+            stop_and_check(runtime, orphan, mark),
+            "the disclaimed orphan outlived the runtime"
+        );
+    }
+
+    /// 7th pass: a tool's profile that allows everything is not the jail's.
+    #[test]
+    fn an_orphan_under_an_allow_everything_profile_is_spared() {
+        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let (runtime, orphan, mark) =
+            runtime_with_an_orphan("(version 1)\n(allow default)\n", "/bin/sleep");
+        assert!(
+            !stop_and_check(runtime, orphan, mark),
+            "an allow-everything orphan was killed"
         );
     }
 

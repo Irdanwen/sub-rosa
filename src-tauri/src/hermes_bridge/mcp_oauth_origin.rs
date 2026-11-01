@@ -102,37 +102,42 @@ async fn vetted(url: &Url, server: &Url, lookup: Lookup) -> Option<Vec<SocketAdd
         .then_some(addresses)
 }
 
-/// A loopback, private, link-local, shared (100.64/10), unspecified,
-/// broadcast or multicast address, an IPv4-mapped or NAT64 one judged by
-/// the IPv4 inside.
+/// Anything but a public, global unicast address (7th pass): an allowlist
+/// rather than a list of local ranges. IPv4 outside 0/8, 10/8, 100.64/10,
+/// 127/8, 169.254/16, 172.16/12, 192.0.0/24, 192.0.2/24, 192.88.99/24,
+/// 192.168/16, 198.18/15, 198.51.100/24, 203.0.113/24, 224/4 and 240/4;
+/// IPv6 only within 2000::/3, outside Teredo (2001::/32), documentation
+/// (2001:db8::/32) and 6to4 (2002::/16); an IPv4-mapped address is judged
+/// by the IPv4 inside, and every other form (IPv4-compatible, NAT64,
+/// site-local, unique local, link-local) is local.
 fn ip_is_local(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => {
-            let [a, b, ..] = ip.octets();
-            ip.is_loopback()
-                || ip.is_private()
-                || ip.is_link_local()
-                || ip.is_unspecified()
-                || ip.is_broadcast()
-                || ip.is_multicast()
-                || a == 0
+            let [a, b, c, _] = ip.octets();
+            a == 0
+                || a == 10
+                || a == 127
+                || a >= 224
                 || (a == 100 && (64..128).contains(&b))
+                || (a == 169 && b == 254)
+                || (a == 172 && (16..32).contains(&b))
+                || (a == 192 && b == 168)
+                || (a == 192 && b == 0 && (c == 0 || c == 2))
+                || (a == 192 && b == 88 && c == 99)
+                || (a == 198 && (b == 18 || b == 19))
+                || (a == 198 && b == 51 && c == 100)
+                || (a == 203 && b == 0 && c == 113)
         }
         IpAddr::V6(ip) => {
             if let Some(inner) = ip.to_ipv4_mapped() {
                 return ip_is_local(IpAddr::V4(inner));
             }
             let segments = ip.segments();
-            if segments[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
-                let octets = ip.octets();
-                let inner = std::net::Ipv4Addr::new(octets[12], octets[13], octets[14], octets[15]);
-                return ip_is_local(IpAddr::V4(inner));
-            }
-            ip.is_loopback()
-                || ip.is_unspecified()
-                || ip.is_multicast()
-                || (segments[0] & 0xfe00) == 0xfc00
-                || (segments[0] & 0xffc0) == 0xfe80
+            let global_unicast = (segments[0] & 0xe000) == 0x2000;
+            let teredo = segments[0] == 0x2001 && segments[1] == 0;
+            let documentation = segments[0] == 0x2001 && segments[1] == 0x0db8;
+            let six_to_four = segments[0] == 0x2002;
+            !global_unicast || teredo || documentation || six_to_four
         }
     }
 }
@@ -378,6 +383,15 @@ mod tests {
             ("https://100.64.0.1/a", false),
             ("https://[64:ff9b::a00:1]/a", false),
             ("https://[fd00::1]/a", false),
+            ("https://[::7f00:1]/a", false),
+            ("https://[2002:7f00:1::]/a", false),
+            ("https://[2001:0:4136:e378::1]/a", false),
+            ("https://[fec0::1]/a", false),
+            ("https://198.18.0.1/a", false),
+            ("https://192.0.0.8/a", false),
+            ("https://240.0.0.1/a", false),
+            ("https://[2606:4700::1111]/a", true),
+            ("https://1.1.1.1/a", true),
         ] {
             let url = parse_strict(raw).unwrap();
             assert_eq!(

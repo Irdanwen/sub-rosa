@@ -1269,3 +1269,73 @@ fn the_reaper_recognizes_the_jails_profile() {
     let _ = jailed.wait();
     assert!(recognized, "the jail's own process is not recognized");
 }
+
+/// 7th pass: the jail writes inside its temp folder but cannot remove it,
+/// rename it, change its mode or put a link in its place.
+#[test]
+fn the_jail_cannot_replace_its_own_temp_folder() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let tmp = jail.root.join("jail-tmp");
+    let out = jail.sh(&format!(
+        "cd {tmp} && touch inside && echo WROTE; cd /; rmdir {tmp} 2>/dev/null && echo REMOVED; mv {tmp} {tmp}2 2>/dev/null && echo MOVED; chmod 777 {tmp} 2>/dev/null && echo CHMOD; exit 0",
+        tmp = shell_quote(&tmp)
+    ));
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(said.contains("WROTE"), "{said}");
+    for done in ["REMOVED", "MOVED", "CHMOD"] {
+        assert!(!said.contains(done), "{done}: {said}");
+    }
+    assert!(tmp.is_dir());
+}
+
+/// 7th pass: making a private folder never follows a link put in its place.
+#[cfg(unix)]
+#[test]
+fn a_private_folder_is_never_made_through_a_link() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().unwrap();
+    let elsewhere = dir.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::fs::set_permissions(&elsewhere, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let folder = dir.path().join("sr-jail");
+    std::os::unix::fs::symlink(&elsewhere, &folder).unwrap();
+    super::create_private_dir(&folder).unwrap();
+    let meta = folder.symlink_metadata().unwrap();
+    assert!(meta.is_dir() && !meta.file_type().is_symlink());
+    assert_eq!(meta.permissions().mode() & 0o777, 0o700);
+    let kept = std::fs::metadata(&elsewhere).unwrap().permissions().mode() & 0o777;
+    assert_eq!(kept, 0o755, "the folder the link pointed to was changed");
+}
+
+/// 7th pass: no app container's or Podman's socket answers, even inside a
+/// working folder that spans them.
+#[test]
+fn the_jail_reaches_no_app_container_socket() {
+    let Some(jail) = KernelJail::new(false, Some(".")) else {
+        return;
+    };
+    let sockets = [
+        jail.root.join("Library/Group Containers/s"),
+        jail.root.join("Library/Containers/s"),
+        jail.root.join(".local/share/containers/s"),
+    ];
+    let mut listeners = Vec::new();
+    for path in &sockets {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        listeners.push(std::os::unix::net::UnixListener::bind(path).unwrap());
+    }
+    let probe = "import socket, sys\nfor p in sys.argv[1:]:\n    s = socket.socket(socket.AF_UNIX)\n    try:\n        s.connect(p)\n        print('CONNECTED', p)\n    except OSError:\n        print('refused', p)\n";
+    let out = Command::new(SANDBOX_EXEC_PATH)
+        .arg("-f")
+        .arg(&jail.profile_path)
+        .args(["/usr/bin/python3", "-I", "-c", probe])
+        .args(&sockets)
+        .output()
+        .expect("run the probe");
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(!said.contains("CONNECTED"), "{said}");
+    assert_eq!(said.matches("refused").count(), 3, "{said}");
+    drop(listeners);
+}
