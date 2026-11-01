@@ -57,13 +57,16 @@ that are not jailed.
    one-off reader when it does not, and never follows a link there to write.
    That reader runs under a profile of its own, written fresh at every start
    (`hermes-sandbox-reader.sb`): the jail of that home with no working folder
-   and no agent CLI state, whatever the last session had. Where sandboxed
+   and no agent CLI state, whatever the last session had, and one more write
+   grant, its answer folder `<app data>/hermes-reader-results/` (never the
+   temp folder the sandboxed runtime shares). Where sandboxed
    processes run jailed and that profile is missing, the reader does not run
    (it fails closed); it never reads the jail's home from outside the jail.
    When the app opens a runtime's `state.db` in its own process (a task's
    replies, the account backfill), it opens it read only, with
-   `trusted_schema=OFF`, `cell_size_check=ON`, `query_only=ON` and no
-   extension, and attaches none of its own databases to it.
+   `trusted_schema=OFF`, `cell_size_check=ON`, `query_only=ON`, SQLite's
+   defensive mode and no extension, and attaches none of its own databases
+   to it.
 2. **Each conversation has one owner home, and is read and written there
    only** (`hermes_bridge/session_owner.rs`). The owner is, in order: the
    shared home for a routine's run (`cron_*`), whatever is recorded; the home
@@ -71,7 +74,13 @@ that are not jailed.
    (`hermes-session-homes.json` beside both homes, written by the app
    alone, from the mode of the runtime that did it); the shared home when its
    database has the conversation (one from before the split, a gateway's);
-   otherwise the sandboxed home. The app never asks the sandboxed home first
+   otherwise the sandboxed home. A shared database that exists but cannot
+   be read counts as having the conversation (it fails closed). The webview
+   tells the app where a conversation was created or resumed, and the app
+   refuses to move to the sandboxed home one the shared database has, unless
+   it was copied at the split (`hermes-split-sessions.json`): a resume that
+   worked on the sandboxed runtime proves nothing for an identifier the jail
+   could have written. The app never asks the sandboxed home first
    and the shared one on a 404: the jail could otherwise answer for a
    conversation of the unrestricted side by writing one under its
    identifier. A conversation present in both homes (copied at the split)
@@ -108,41 +117,56 @@ that are not jailed.
    session of its own (`setsid`, `sandbox_profile::own_session`), not only
    a group of its own, because `setpgid` cannot cross sessions and nothing
    it starts can then join the app's group, from where a signal to the app
-   would no longer count as going to "others".
-6. **No system service starts or drives a program outside the jail on its
-   behalf.** A jailed process inherits the profile, but a service it asks to
-   launch something runs that program outside it. Measured on macOS 26, the
-   profile refuses the lookup of (`REFUSED_MACH_SERVICES`):
-   - `com.apple.coreservices.*` and `com.apple.lsd.*`: LaunchServices
-     (`open`, `NSWorkspace`, URL and document handlers, the handler
-     database) and Apple events (`osascript` driving Finder, Terminal or
-     System Events). Before this, `open -n X.app` from the jail started X
-     outside it.
-   - `com.apple.siri*`, `com.apple.WorkflowKit.*`, `com.apple.shortcuts*`,
-     `com.apple.linkd.*`, `com.apple.private.alloy.shortcuts*`: Shortcuts,
-     whose daemon runs a shortcut's actions (a shell script among them);
-     `shortcuts list` still answered with LaunchServices refused.
-   - `com.apple.backgroundtaskmanagement*` and `com.apple.xpc.smd`: login
-     items and helpers, which run at the next login.
-   - `com.apple.dock.*`: the Dock launches applications.
-   - `com.apple.pbs.*` and `com.apple.finder.ServiceProvider`: the Services
-     menu, which runs a service inside another application. The pasteboard
-     itself (`com.apple.pasteboard.1`) stays: it carries data, it runs
-     nothing.
+   would no longer count as going to "others". Stopping a jailed runtime
+   kills its group and, gathered before, every process descending from it,
+   still in its session, or carrying the mark (`SUBROSA_JAIL_MARK`) each
+   jailed spawn passes down (`jail_reaper.rs`); a one-off reader's or a
+   sign-in's leftovers die when it ends. What escapes: a process that left
+   the session, whose parent is gone, and whose environment the system
+   hides (Apple-signed programs) or no longer carries the mark. It keeps
+   the jail and none of the app's privacy grants.
+6. **The jail reaches only the system services it was measured to need.**
+   A jailed process inherits the profile, but a service it asks to act runs
+   outside it: LaunchServices started an application (`open -n X.app`),
+   Shortcuts ran a shell script, and the privacy grants the app holds
+   (Accessibility, posting events, recording the screen) answered yes under
+   the jail, so a jailed process could type into another application or
+   drive the dictation helper. The profile is `(deny mach-lookup)` with an
+   allowlist (`ALLOWED_MACH_SERVICES`):
+   - `com.apple.system.opendirectoryd.libinfo`: users, groups and name
+     resolution; without it nothing starts.
+   - `com.apple.cfprefsd.agent` and `com.apple.cfprefsd.daemon`: reading
+     preferences.
+   - `com.apple.FSEvents`: watching files (Node, language servers).
+   - `com.apple.trustd.agent`: certificate trust for Go, Swift and
+     Security-framework TLS.
 
-   And `(deny user-preference-write)`: preferences are written by
-   `cfprefsd`, outside the jail, and read by every program that starts
-   later (`defaults write` from the jail worked before). What needs no rule,
-   measured and kept by a test: launchd refuses `launchctl bootstrap`,
-   `load`, `submit` and `setenv` to any sandboxed process; setuid programs
-   (`crontab`, `at`) cannot be executed under a profile; the login keychain
-   is a file the write jail already closes. What stays reachable, by
-   design: the network (the sandboxed runtime calls models and the web) and
-   so any service that listens on it, notably a remote login the person
-   turned on; reading files the person can read, but for credential stores;
-   the services a Python or Node runtime needs (preferences read, DNS,
-   certificates). The list is a denylist over `(allow default)`: a service
-   macOS adds later is not refused until it is measured.
+   It was measured by removing each candidate in turn (the auditor's
+   nineteen and more) under Python (users, name resolution, subprocesses,
+   TLS to a real host), Node (child processes, TLS, `fs.watch`), git and
+   curl over HTTPS, a Go binary's TLS and `defaults read`, then confirmed by
+   the pinned runtime's own session with every tool, TLS to a real host,
+   file watching, a refused `open` and a refused Accessibility check
+   (`runtime_lives.py`). Everything else is refused: LaunchServices and
+   Apple events, Shortcuts, login items, the Dock, the Services menu, the
+   window server (no screenshot, no synthesized key or click: the display
+   answers 0), the privacy daemon (every privacy preflight answers no), the
+   pasteboard and the keychain daemon. And `(deny user-preference-write)`:
+   preferences are written by `cfprefsd`, outside the jail, and read by
+   every program that starts later. What needs no rule, measured and kept
+   by a test: launchd refuses `launchctl bootstrap`, `load`, `submit` and
+   `setenv` to any sandboxed process; setuid programs (`crontab`, `at`)
+   cannot be executed under a profile. What stays reachable, by design: the
+   network, and so any service listening on it (a remote login the person
+   turned on); reading the person's files but for credential stores.
+
+   Starting the jail with the app's privacy responsibility disclaimed
+   (`responsibility_spawnattrs_setdisclaim`) was measured too: it also makes
+   every preflight answer no, but the runtime then loses the folders macOS
+   protects for the app (Documents, Desktop, Downloads: "Operation not
+   permitted"), where a person's working folder usually is. The allowlist
+   gives the same answers without that loss, so the spawn keeps the app's
+   responsibility; see Alternatives.
 7. **Every command the app runs names `--profile default`**: the dashboard,
    `gateway start`, `mcp login`, `skills reset`, `skills tap` and the
    developer terminal, whatever profile the webview asked for. The runtime
@@ -178,7 +202,15 @@ that are not jailed.
    runtime reads them there; the bundled skills are copied into each home
    by the app before it starts.
 10. **What a jailed process could plant in the shared home before this fix
-   is set aside once.** At the first start under this ADR the app moves
+   is set aside once.** First the links: every symbolic link of the shared
+   home (a folder that is one included, `scripts/` or `skills/` say) is set
+   aside without anything read through it, and every file with a second
+   name (a hard link to `/private/tmp/...`) is replaced by a copy of itself,
+   so its contents stay (the session database may be one) and the other
+   name no longer reaches it; the person's workspace keeps its own links.
+   And the app never writes a file it owns in place: it writes a new file
+   beside it and renames it over (`home_prep::write_owned`), refuses a
+   folder on the way that is a link. Then the app moves
    into `<app data>/quarantine/<date>/` (never deletes), writing the
    manifest one line per item as it goes: everything in `bin/`, `hooks/`,
    `scripts/`, `mcp-installs/`, `plugins/` (but the guard) and `profiles/`,
@@ -190,14 +222,22 @@ that are not jailed.
    manifest). The gateway is restarted once so nothing it loaded stays. A
    notice, once, as a banner where the app opens and in Settings › Agent,
    lists what was moved (without claiming none of it was the person's) and
-   what was flagged, says what to do again, and offers to put everything
-   back: the app moves it from `quarantine/<date>/` into the shared home,
-   outside the jail, and the gateway is restarted to take it.
+   what was flagged, says what to do again, and lets the person put back
+   the items they choose, one by one, after a confirmation that lists what
+   will run outside the sandbox again: the app moves them from
+   `quarantine/<date>/` into the shared home, outside the jail, and the
+   gateway is restarted to take them. A link, or a folder holding one, is
+   never put back.
 11. **Each side signs in to an MCP server on its own.** `mcp login` runs in
    the home of the session that asks, under the reader's jail for a
    sandboxed one; its tokens stay in that home (`mcp-tokens/`, runtime
    state). No refresh token is copied from the shared home into the jail's,
-   so nothing the unrestricted side was granted becomes the jail's.
+   so nothing the unrestricted side was granted becomes the jail's. The
+   authorization address the sign-in prints opens by itself only when its
+   origin is the MCP server's own or an authorization server it declares
+   (RFC 9728 metadata, then that server's own), the server taken from the
+   app's record of the person's settings; any other address is shown to the
+   person with its host, and they decide.
 12. **The copy of the conversations at the split never stops a start.** A
    copy that fails is logged, said in the notice, and tried again at the
    next start while the sandboxed home has no database of its own; until
@@ -236,10 +276,14 @@ that are not jailed.
   "Unrestricted workspace" of the Files panel. The scanner and Node are
   downloaded again when needed.
 - In a sandboxed session, opening a link, a file or an application from a
-  tool (`open`, the runtime's own browser opening, `osascript`, Shortcuts)
-  fails; the app still opens the links it shows. Writing a preference
-  (`defaults write`) and copying to the Services menu fail. The clipboard
-  and the network work as before.
+  tool (`open`, the runtime's own browser opening, `osascript`, Shortcuts),
+  the clipboard (`pbcopy`, `pbpaste`), notifications, screenshots and
+  simulated keys or clicks fail; the soul and the session's environment
+  note tell the assistant so, and to give the link or the path instead. The
+  app still opens the links it shows. Writing a preference fails. The
+  network, TLS and file watching work as before.
+- An MCP sign-in address that is not on the server's own origin, or one it
+  declares, is not opened: the server row shows it with its host.
 
 ## Consequences
 
@@ -250,26 +294,35 @@ that are not jailed.
   home is never one (`the_write_grants_are_exactly_the_declared_list`); the
   kernel refuses every vector, every write in the shared home, a carrier
   folder in a re-opened folder's place and any signal to a process outside
-  the jail, any join of the app's process group, every service of the list
-  above (with a control that the services a runtime needs still answer),
-  `open` of an application, `launchctl` and `defaults write`
-  (`sandbox_profile_tests.rs`); the gateway starts on the shared
+  the jail, any join of the app's process group, every service that starts
+  a program, the window server, the privacy daemon and the pasteboard (with
+  a control that each allowed service answers), every privacy preflight,
+  `open` of an application, `launchctl` and `defaults write`, a write by
+  the runtime in the reader's answer folder; a sandboxed session is told to
+  give links (`sandbox_profile_tests.rs`); a process that left the
+  runtime's session dies with it (`jail_reaper.rs`); an owned file is
+  replaced, never written through a link (`home_prep.rs`); a sign-in
+  address opens only on a declared origin (`mcp_oauth_origin.rs`); the gateway starts on the shared
   home even when the sandboxed runtime asks, the routines and a
   conversation the jail does not own are never asked of the sandboxed
   runtime, the list keeps each conversation from its owner, the reader fails
   closed without its profile, the conversations from before are copied
   once and a failed copy is said and tried again (`home_split.rs`); the
-  owner rules and the hardened read options (`session_owner.rs`); the
+  owner rules, the hardened read options with defensive mode, a sandboxed
+  resume that cannot take a shared conversation, an unreadable shared
+  database that fails closed (`session_owner.rs`); the
   backfill mirrors from the owner only (`account/conversations.rs`); each
   side signs in on its own home (`hermes_bridge.rs`); only
   declared keys reach `.env` and an import keeps no `API_SERVER_KEY`
   (`admin_settings.rs`, `admin_once.rs`, `home_prep.rs`); the shared home's
-  plants are set aside once, the notice says what to do again, the person
-  can put everything back, a skill is matched by its exact name
+  plants are set aside once, its links set aside or cut, the notice says
+  what to do again, the person puts back only what they choose and never a
+  link, a skill is matched by its exact name
   (`quarantine.rs`); under the real runtime, in
   its own home, no vector (in either home) can be planted and the next
   session still asks, a left-over profile is neither followed nor kept, the
-  runtime lives with its home read-only (and with every refused service),
+  runtime lives with its home read-only and the service allowlist (TLS to a
+  real host, file watching, `open` refused, Accessibility answering no),
   the jailed reader reads the sandboxed home, and every settings change
   succeeds from the app while the same change from the jail is refused
   (`jail_runtime_tests.rs`, ignored, free). Each test was checked by
@@ -287,11 +340,14 @@ that are not jailed.
 - **A second, unjailed dashboard kept running for settings**: a process
   lifecycle (ports, tokens, reaping) for a change a person makes a few times
   a month; a one-shot process costs half a second.
-- **An allowlist of system services** (deny every lookup, allow the
-  measured ones): the runtime runs whatever tools a session installs, and
-  what a Python or Node package looks up is not known in advance; one
-  missing name breaks a session silently. The denylist names the services
-  that start or drive programs, and the kernel test fails if one answers.
+- **A denylist of system services** (the previous pass): it closed
+  LaunchServices, Shortcuts and the rest by name, and left the window server
+  and the privacy daemon open, through which the app's Accessibility and
+  event grants reached the jail. A service macOS adds is refused by the
+  allowlist until it is measured; a tool that needs one fails visibly.
+- **Disclaiming the app's privacy responsibility at the spawn**: measured,
+  it gives the same no to every preflight, and takes away the protected
+  folders (Documents, Desktop, Downloads) a sandboxed session works in.
 - **Reading a conversation from the sandboxed home first and the shared one
   on a 404**: simple, and it let the jail answer for any conversation of the
   unrestricted side by writing one under its identifier.
