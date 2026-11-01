@@ -417,6 +417,13 @@ unrestricted runtime, the gateway (routines, messaging, task boards) and the
 app's settings changes; the jail cannot write it.
 _Avoid_: "the Hermes home" unqualified when the mode matters.
 
+**Owner home** (of a conversation):
+The one home a conversation is read and written in (ADR-0140): the shared
+home for a routine's run, otherwise the home recorded when it was created or
+resumed, otherwise the shared home when it has the conversation, otherwise
+the sandboxed home. A copy of it in the other home is never read.
+_Avoid_: "where the session lives" when both homes have a copy.
+
 **Runtime state**:
 The parts of the sandboxed home the jail may write (ADR-0140): the default
 workspace, session records and the session database, logs, caches, attached

@@ -2939,14 +2939,19 @@ mesuré (`workspace/`, `sessions/`, `logs/`, `cache/`, `images/`,
 `active_profile` supprimé à chaque démarrage ; `.env` réécrit par l'app depuis
 son registre filtré (`hermes-settings.json`) ; les changements de Réglages
 passent par un processus ponctuel de l'app hors du jail (`admin_once`) et
-survivent au démarrage suivant. Homes séparés par mode : proposé, pas fait
-(voir l'ADR).
+survivent au démarrage suivant. Un home par mode (`hermes-sandboxed/` pour le
+runtime sandboxé, `hermes/` partagé et fermé au jail) ; chaque conversation a
+un home propriétaire ; aucun service système ne lance un programme hors du
+jail pour lui ; le runtime démarre dans sa propre session.
 
 ### Fichiers ajoutés
 
 - `src-tauri/src/hermes_bridge/sandbox_profile.rs` (+ `sandbox_profile_tests.rs`) : le profil, sorti de `hermes_bridge.rs` (cliquet −597 lignes), la liste d'autorisation, essais noyau
 - `src-tauri/src/hermes_bridge/home_split.rs` : un home par mode (`hermes-sandboxed/` pour le runtime sandboxé), routage des requêtes de tableau de bord par home (sessions fusionnées, routines et messageries sur le home partagé), lecteur ponctuel sous le jail, copie unique des conversations
-- `src-tauri/src/hermes_bridge/quarantine.rs` : mise de côté unique de ce qui n'est pas à l'app, avis aux Réglages
+- `src-tauri/src/hermes_bridge/session_owner.rs` : le home propriétaire de chaque conversation (`hermes-session-homes.json`, écrit par l'app seule), commande `hermes_record_session_home`, options de lecture durcies d'un `state.db`
+- `src-tauri/src/hermes_bridge/quarantine.rs` : mise de côté unique de ce qui n'est pas à l'app, avis (ce qu'il faut refaire, éléments signalés) et « Put them back »
+- `src/components/agent/HomeSplitNotice.tsx` : l'avis unique, en bandeau à l'ouverture et dans Réglages › Agent
+- `src/components/agent/filesystem-root-words.ts` : libellés et descriptions du panneau Fichiers par `t()`, selon l'id du dossier
 - `src-tauri/src/hermes_bridge/home_prep.rs` : squelette du home, `.env` depuis le registre, `active_profile`, fichiers possédés remplacés et non suivis
 - `src-tauri/src/hermes_bridge/admin_settings.rs` : le registre, extraction par clés nommées, réinsertion dans `config.yaml`, filtre et lecteur `.env`
 - `src-tauri/src/hermes_bridge/admin_once.rs` + `src-tauri/src/hermes/subrosa_admin.py` : routes de réglage exécutées hors jail, copie des skills livrées
@@ -2956,13 +2961,15 @@ survivent au démarrage suivant. Homes séparés par mode : proposé, pas fait
 
 | Fichier | Changement | Re-merge |
 |---|---|---|
-| `src-tauri/src/hermes_bridge.rs` | Profil déplacé (`prepare_sandbox` passe `SandboxGrants`) ; `dashboard_args` avec `--profile default` ; `--profile default` forcé dans `mcp login`, `skills reset`, `skills tap` et le TUI ; `sync_hermes_config` applique le registre puis `home_prep::prepare` ; `config.yaml`/`SOUL.md` via `write_owned` ; `hermes_connection_json` délègue les routes de réglage à `admin_once` ; copie des skills livrées avant un démarrage sandboxé ; `active_profile` retiré avant `gateway start` ; texte sandbox du SOUL ; anciennes constantes `HERMES_CONFIG_*` et tests du profil retirés | Réappliquer ; ne jamais rouvrir le home en racine d'écriture |
+| `src-tauri/src/hermes_bridge.rs` | Profil et `prepare_sandbox` déplacés (`sandbox_profile::prepare`, `prepare_reader`) ; runtime lancé par `own_session` (`setsid`) au lieu de `process_group(0)` ; `hermes_bridge_cron_jobs` passe par `home_split::api_json` (home partagé) ; `mcp login` sur le home de la session, sous le jail du lecteur côté sandboxé, sans copie de jetons ; libellés du panneau Fichiers sans « Hermes » ; `dashboard_args` avec `--profile default` ; `--profile default` forcé dans `mcp login`, `skills reset`, `skills tap` et le TUI ; `sync_hermes_config` applique le registre puis `home_prep::prepare` ; `config.yaml`/`SOUL.md` via `write_owned` ; `hermes_connection_json` délègue les routes de réglage à `admin_once` ; copie des skills livrées avant un démarrage sandboxé ; `active_profile` retiré avant `gateway start` ; texte sandbox du SOUL ; anciennes constantes `HERMES_CONFIG_*` et tests du profil retirés | Réappliquer ; ne jamais rouvrir le home en racine d'écriture |
 | `src-tauri/src/hermes_bridge/gateway_start.rs` | `--profile default` avant `gateway start`/`install` | Réappliquer |
 | `src-tauri/src/hermes_bridge/builtin_mcp.rs` | `is_builtin_server` | Réappliquer |
 | `src/lib/hermes-admin/errors.ts`, `transport.ts` | Messages sûrs par `t()`, sans nommer le runtime ; un 5xx dit « This change was not made » ; le code `setting_key_not_declared` a sa phrase | Réappliquer, garder les phrases du catalogue |
-| `src-tauri/src/commands.rs`, `src-tauri/src/account/conversations.rs`, `src-tauri/src/temporary_chat/mod.rs`, `src-tauri/src/personalization/mod.rs`, `src-tauri/src/hermes_working_dir.rs` | Lisent ou nettoient les deux homes (`hermes-sandboxed` d'abord) ; le workspace par défaut d'une session sandboxée est celui du home sandboxé | Réappliquer |
-| `src-tauri/src/lib.rs` | `hermes_bridge::quarantine::{hermes_quarantine_notice, dismiss_hermes_quarantine_notice}` dans la liste desktop (préfixe `hermes`, propre au bureau) | Réappliquer |
-| `src/components/settings/AgentSettingsSection.tsx`, `src/lib/tauri.ts` | Ligne « In a sandboxed session » (ce qui ne marche pas en bac à sable, vérificateur de commandes coupé) et avis unique « Files set aside » | Réappliquer |
+| `src-tauri/src/commands.rs`, `src-tauri/src/account/conversations.rs` | Lisent une conversation dans son home propriétaire seulement (`session_owner`), jamais « sandboxé puis partagé sur 404 » ; `state.db` ouvert en lecture seule durcie (`trusted_schema=OFF`, `cell_size_check=ON`, `query_only`) ; le backfill du compte n'attache plus la base de l'app et clé sa progression par home (`default` partagé, `sandboxed`) | Réappliquer |
+| `src-tauri/src/temporary_chat/mod.rs`, `src-tauri/src/personalization/mod.rs`, `src-tauri/src/hermes_working_dir.rs` | Nettoient ou écrivent les deux homes ; le workspace par défaut d'une session sandboxée est celui du home sandboxé | Réappliquer |
+| `src-tauri/src/lib.rs` | `hermes_bridge::quarantine::{hermes_quarantine_notice, dismiss_hermes_quarantine_notice, restore_hermes_quarantine}` et `hermes_bridge::session_owner::hermes_record_session_home` dans la liste desktop (préfixe `hermes`, propre au bureau) | Réappliquer |
+| `src/components/settings/AgentSettingsSection.tsx`, `src/lib/tauri.ts`, `src/app/App.tsx`, `src/styles/app.css` | Ligne « In a sandboxed session » ; l'avis unique `HomeSplitNotice` (bandeau dans `main-panel`, et Réglages › Agent) | Réappliquer |
+| `src/lib/agent-session-modes.ts`, `src/components/agent/AgentWorkspace.tsx`, `src/components/chat-bar/ChatBar.tsx` | Le home d'une session est enregistré côté natif à la création et à la reprise (`recordSessionHome`) ; libellés du panneau Fichiers par `t()` selon l'id | Réappliquer |
 | `src-tauri/src/documents.rs` | `extract_beside` écrit en fichier neuf (remplace ce qui est au nom, ne le suit pas) | Réappliquer |
 | `src-tauri/src/hermes_bridge/guard.rs` | Le plugin est écrit par `write_owned`, un lien à la place du dossier est retiré | Réappliquer |
 | `src/lib/hermes-admin/use-skill-setup.ts`, `use-skill-detail.ts`, `use-skill-bundles.ts` | « Hermes is not running. » remplacé par une phrase traduite | Réappliquer |
@@ -2983,4 +2990,9 @@ survivent au démarrage suivant. Homes séparés par mode : proposé, pas fait
 - Le profil ferme par `literal` chaque ancêtre du home et du runtime jusqu'à `/` : écrire dedans reste permis, renommer ou remplacer non.
 - Le gateway est TOUJOURS lancé sur le home partagé (`hermes_gateway_start_command`), même demandé depuis le runtime sandboxé ; son état « running » se lit sur le home partagé (lecteur ponctuel), pas sur le tableau de bord sandboxé qui n'a pas de gateway.
 - Le profil sandboxé ferme le home partagé en entier et refuse les signaux hors du sandbox (`(deny signal (target others))` + `(allow signal (target same-sandbox))`, mesuré : le runtime arrête encore ses enfants en nouvelle session).
+- Services système refusés au jail (`REFUSED_MACH_SERVICES`, liste raisonnée dans l'ADR) et `(deny user-preference-write)` : depuis le jail, `open`, `osascript`, `shortcuts run`, `defaults write` échouent ; `launchctl bootstrap/submit/setenv` et `crontab` étaient déjà refusés par launchd et par le noyau (testé). Un outil qui ouvre une URL ou une app depuis une session sandboxée ne marche plus ; l'app ouvre toujours les liens qu'elle montre.
+- « others » pour `signal` = un autre groupe de processus : d'où `setsid` (une session ne se rejoint pas), pas seulement `process_group(0)`.
+- Le lecteur ponctuel du home sandboxé tourne sous `hermes-sandbox-reader.sb` (réécrit à chaque démarrage, sans dossier de travail ni accès CLI) et échoue fermé sans lui là où le jail s'applique.
+- Jetons OAuth MCP : chaque côté se connecte dans son propre home ; aucune copie du home partagé vers celui du jail.
+- La copie des conversations au partage ne bloque jamais un démarrage : un échec est journalisé, dit dans l'avis, et réessayé tant que le home sandboxé n'a pas de base à lui.
 - Conflit attendu à la fusion de `feat/code-p1-checks`, qui crée aussi `sandbox_profile.rs` (refus nommés) : garder l'inversion de ce lot et y reporter la section des toolchains.

@@ -54,9 +54,31 @@ that are not jailed.
    shared home, whichever runtime asks for it. The app reads the sandboxed
    home as data only (the list of conversations, a transcript, the files of
    the workspace), through the sandboxed runtime when it runs, or through a
-   one-off reader under the same jail when it does not, and never follows a
-   link there to write.
-2. **Inside its own home, the jail writes only its working state.** The
+   one-off reader when it does not, and never follows a link there to write.
+   That reader runs under a profile of its own, written fresh at every start
+   (`hermes-sandbox-reader.sb`): the jail of that home with no working folder
+   and no agent CLI state, whatever the last session had. Where sandboxed
+   processes run jailed and that profile is missing, the reader does not run
+   (it fails closed); it never reads the jail's home from outside the jail.
+   When the app opens a runtime's `state.db` in its own process (a task's
+   replies, the account backfill), it opens it read only, with
+   `trusted_schema=OFF`, `cell_size_check=ON`, `query_only=ON` and no
+   extension, and attaches none of its own databases to it.
+2. **Each conversation has one owner home, and is read and written there
+   only** (`hermes_bridge/session_owner.rs`). The owner is, in order: the
+   shared home for a routine's run (`cron_*`), whatever is recorded; the home
+   the app recorded when the conversation was created or resumed
+   (`hermes-session-homes.json` beside both homes, written by the app
+   alone, from the mode of the runtime that did it); the shared home when its
+   database has the conversation (one from before the split, a gateway's);
+   otherwise the sandboxed home. The app never asks the sandboxed home first
+   and the shared one on a 404: the jail could otherwise answer for a
+   conversation of the unrestricted side by writing one under its
+   identifier. A conversation present in both homes (copied at the split)
+   is listed, read, matched to a task and mirrored to the account from its
+   owner only; the other copy is not read. The account backfill keys its
+   progress by home.
+3. **Inside its own home, the jail writes only its working state.** The
    profile closes the home and the installation as a whole, after every
    other grant (temp folders, the working folder, the agent CLI opt-in), and
    re-opens only `workspace/`, `sessions/`, `logs/`, `cache/`, `images/`,
@@ -75,20 +97,59 @@ that are not jailed.
    links, but for its `uploads`), a re-opened folder's own name can be
    neither replaced by a link nor removed or renamed over, and links left
    from before are swept at every start.
-3. **The runtime's installation is not a write root** (as in the CLI's own
+4. **The runtime's installation is not a write root** (as in the CLI's own
    profile).
-4. **No signal leaves the jail.** The profile refuses signals to other
+5. **No signal leaves the jail.** The profile refuses signals to other
    processes (`(deny signal (target others))`) and allows those within the
    same sandbox, so the runtime still stops its own children, in their own
    process groups too, while the app, the gateway and the unrestricted
-   runtime are out of its reach.
-5. **Every command the app runs names `--profile default`**: the dashboard,
+   runtime are out of its reach. For the kernel, "others" means another
+   process group: so the runtime (and the one-off reader) starts in a
+   session of its own (`setsid`, `sandbox_profile::own_session`), not only
+   a group of its own, because `setpgid` cannot cross sessions and nothing
+   it starts can then join the app's group, from where a signal to the app
+   would no longer count as going to "others".
+6. **No system service starts or drives a program outside the jail on its
+   behalf.** A jailed process inherits the profile, but a service it asks to
+   launch something runs that program outside it. Measured on macOS 26, the
+   profile refuses the lookup of (`REFUSED_MACH_SERVICES`):
+   - `com.apple.coreservices.*` and `com.apple.lsd.*`: LaunchServices
+     (`open`, `NSWorkspace`, URL and document handlers, the handler
+     database) and Apple events (`osascript` driving Finder, Terminal or
+     System Events). Before this, `open -n X.app` from the jail started X
+     outside it.
+   - `com.apple.siri*`, `com.apple.WorkflowKit.*`, `com.apple.shortcuts*`,
+     `com.apple.linkd.*`, `com.apple.private.alloy.shortcuts*`: Shortcuts,
+     whose daemon runs a shortcut's actions (a shell script among them);
+     `shortcuts list` still answered with LaunchServices refused.
+   - `com.apple.backgroundtaskmanagement*` and `com.apple.xpc.smd`: login
+     items and helpers, which run at the next login.
+   - `com.apple.dock.*`: the Dock launches applications.
+   - `com.apple.pbs.*` and `com.apple.finder.ServiceProvider`: the Services
+     menu, which runs a service inside another application. The pasteboard
+     itself (`com.apple.pasteboard.1`) stays: it carries data, it runs
+     nothing.
+
+   And `(deny user-preference-write)`: preferences are written by
+   `cfprefsd`, outside the jail, and read by every program that starts
+   later (`defaults write` from the jail worked before). What needs no rule,
+   measured and kept by a test: launchd refuses `launchctl bootstrap`,
+   `load`, `submit` and `setenv` to any sandboxed process; setuid programs
+   (`crontab`, `at`) cannot be executed under a profile; the login keychain
+   is a file the write jail already closes. What stays reachable, by
+   design: the network (the sandboxed runtime calls models and the web) and
+   so any service that listens on it, notably a remote login the person
+   turned on; reading files the person can read, but for credential stores;
+   the services a Python or Node runtime needs (preferences read, DNS,
+   certificates). The list is a denylist over `(allow default)`: a service
+   macOS adds later is not refused until it is measured.
+7. **Every command the app runs names `--profile default`**: the dashboard,
    `gateway start`, `mcp login`, `skills reset`, `skills tap` and the
    developer terminal, whatever profile the webview asked for. The runtime
    follows `active_profile` only when no profile is named, and the launchd
    service it writes names none, so the app also removes `active_profile`
    before every start and before the gateway starts.
-6. **The app writes `.env` at every start** from its own record
+8. **The app writes `.env` at every start** from its own record
    (`hermes-settings.json`, in its data folder), which keeps only the keys
    the pinned runtime declares Settings write (`_env_schema` in
    `subrosa_admin.py`, refreshed before every start and with every change).
@@ -102,7 +163,7 @@ that are not jailed.
    import of the existing file and a skill's setup keep credentials only;
    a messaging platform's address, port, home channel or allowlist comes
    only from that platform's own setting.
-7. **Settings changes are made by the app, outside the jail, on the shared
+9. **Settings changes are made by the app, outside the jail, on the shared
    home.** The admin routes the Settings screens call (MCP servers, the
    catalog install, skills, toolsets, `PUT /api/config`, `PUT`/`DELETE
    /api/env`, messaging platforms, routines) run once in a short-lived
@@ -116,7 +177,7 @@ that are not jailed.
    Skills a person installs land in the shared home and the sandboxed
    runtime reads them there; the bundled skills are copied into each home
    by the app before it starts.
-8. **What a jailed process could plant in the shared home before this fix
+10. **What a jailed process could plant in the shared home before this fix
    is set aside once.** At the first start under this ADR the app moves
    into `<app data>/quarantine/<date>/` (never deletes), writing the
    manifest one line per item as it goes: everything in `bin/`, `hooks/`,
@@ -124,17 +185,31 @@ that are not jailed.
    the task board (`kanban.db`), who may write to the messaging gateway
    (`pairing/`, `platforms/pairing/`), `lsp/`, `node/`, `processes.json`,
    and the routines that run a script or no agent. Skills and memories a run
-   may have written are flagged in `flagged.json` and left in place. The
-   gateway is restarted once so nothing it loaded stays; Settings › Agent
-   says it once.
-9. **Nothing resumes on its own.** In the shared home too, the gateway's
+   may have written are flagged in `flagged.json` and left in place (a skill
+   is the runtime's own only when its exact name is in the bundled
+   manifest). The gateway is restarted once so nothing it loaded stays. A
+   notice, once, as a banner where the app opens and in Settings › Agent,
+   lists what was moved (without claiming none of it was the person's) and
+   what was flagged, says what to do again, and offers to put everything
+   back: the app moves it from `quarantine/<date>/` into the shared home,
+   outside the jail, and the gateway is restarted to take it.
+11. **Each side signs in to an MCP server on its own.** `mcp login` runs in
+   the home of the session that asks, under the reader's jail for a
+   sandboxed one; its tokens stay in that home (`mcp-tokens/`, runtime
+   state). No refresh token is copied from the shared home into the jail's,
+   so nothing the unrestricted side was granted becomes the jail's.
+12. **The copy of the conversations at the split never stops a start.** A
+   copy that fails is logged, said in the notice, and tried again at the
+   next start while the sandboxed home has no database of its own; until
+   then those conversations open from the shared home.
+13. **Nothing resumes on its own.** In the shared home too, the gateway's
    window for re-running interrupted turns at its start is one second (0
    means "always" to the runtime) and its delivery ledger is off.
 
 ## What the person sees
 
-- One list of conversations: both homes are merged, a conversation present
-  in both counted once. At the first start of the sandboxed home, the
+- One list of conversations: both homes are merged, each conversation shown
+  from its owner, a copy in the other home not shown. At the first start of the sandboxed home, the
   conversations of the shared home are copied into it once
   (`VACUUM INTO`), so a conversation from before continues in either mode:
   sandboxed in the copy, unrestricted in the original. The copy stops there:
@@ -153,9 +228,18 @@ that are not jailed.
   own memory is unaffected.
 - A settings change takes about half a second more (a process starts) and
   now survives a restart.
-- After the update, items set aside in the shared home are listed once in
-  Settings › Agent; an MCP server installed from the catalog before must be
-  installed again, the scanner and Node are downloaded again when needed.
+- After the update, a notice says once what was set aside and what was
+  flagged, offers to put it back, and says what to do again: pair messaging
+  channels again (their pairing was set aside), install again the catalog
+  MCP servers, restore the task boards if used, sign in again to MCP
+  servers from a sandboxed session, find the former workspace as the
+  "Unrestricted workspace" of the Files panel. The scanner and Node are
+  downloaded again when needed.
+- In a sandboxed session, opening a link, a file or an application from a
+  tool (`open`, the runtime's own browser opening, `osascript`, Shortcuts)
+  fails; the app still opens the links it shows. Writing a preference
+  (`defaults write`) and copying to the Services menu fail. The clipboard
+  and the network work as before.
 
 ## Consequences
 
@@ -166,16 +250,28 @@ that are not jailed.
   home is never one (`the_write_grants_are_exactly_the_declared_list`); the
   kernel refuses every vector, every write in the shared home, a carrier
   folder in a re-opened folder's place and any signal to a process outside
-  the jail (`sandbox_profile_tests.rs`); the gateway starts on the shared
-  home even when the sandboxed runtime asks, the sessions are merged, the
-  conversations from before are copied once (`home_split.rs`); only
+  the jail, any join of the app's process group, every service of the list
+  above (with a control that the services a runtime needs still answer),
+  `open` of an application, `launchctl` and `defaults write`
+  (`sandbox_profile_tests.rs`); the gateway starts on the shared
+  home even when the sandboxed runtime asks, the routines and a
+  conversation the jail does not own are never asked of the sandboxed
+  runtime, the list keeps each conversation from its owner, the reader fails
+  closed without its profile, the conversations from before are copied
+  once and a failed copy is said and tried again (`home_split.rs`); the
+  owner rules and the hardened read options (`session_owner.rs`); the
+  backfill mirrors from the owner only (`account/conversations.rs`); each
+  side signs in on its own home (`hermes_bridge.rs`); only
   declared keys reach `.env` and an import keeps no `API_SERVER_KEY`
   (`admin_settings.rs`, `admin_once.rs`, `home_prep.rs`); the shared home's
-  plants are set aside once (`quarantine.rs`); under the real runtime, in
+  plants are set aside once, the notice says what to do again, the person
+  can put everything back, a skill is matched by its exact name
+  (`quarantine.rs`); under the real runtime, in
   its own home, no vector (in either home) can be planted and the next
   session still asks, a left-over profile is neither followed nor kept, the
-  runtime lives with its home read-only, and every settings change succeeds
-  from the app while the same change from the jail is refused
+  runtime lives with its home read-only (and with every refused service),
+  the jailed reader reads the sandboxed home, and every settings change
+  succeeds from the app while the same change from the jail is refused
   (`jail_runtime_tests.rs`, ignored, free). Each test was checked by
   breaking the rule it holds.
 
@@ -191,3 +287,14 @@ that are not jailed.
 - **A second, unjailed dashboard kept running for settings**: a process
   lifecycle (ports, tokens, reaping) for a change a person makes a few times
   a month; a one-shot process costs half a second.
+- **An allowlist of system services** (deny every lookup, allow the
+  measured ones): the runtime runs whatever tools a session installs, and
+  what a Python or Node package looks up is not known in advance; one
+  missing name breaks a session silently. The denylist names the services
+  that start or drive programs, and the kernel test fails if one answers.
+- **Reading a conversation from the sandboxed home first and the shared one
+  on a 404**: simple, and it let the jail answer for any conversation of the
+  unrestricted side by writing one under its identifier.
+- **Copying the unrestricted side's MCP sign-ins into the jail's home**: it
+  spared a second sign-in, and handed the jail refresh tokens it was never
+  granted.
