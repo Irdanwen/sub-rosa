@@ -498,7 +498,7 @@ pub(crate) mod planted {
                     "\n[core]\n\tfsmonitor = \"{run}\"\n\tpager = \"{run}\"\n\tsshCommand = \"{run}\"\n[diff]\n\texternal = \"{run}\"\n"
                 ),
                 Plant::ProgramsInTheTree | Plant::Programs => format!(
-                    "\n[core]\n\tfsmonitor = \"{run}\"\n[filter \"evil\"]\n\tclean = \"{run} clean\"\n\tsmudge = \"{run} smudge\"\n[diff]\n\texternal = \"{inside}\"\n[diff \"evil\"]\n\tcommand = \"{run}\"\n\ttextconv = \"{run}\"\n"
+                    "\n[core]\n\tfsmonitor = \"{run}\"\n[filter \"evil\"]\n\tclean = \"{run} clean\"\n\tsmudge = \"{run} smudge\"\n[diff]\n\texternal = \"{inside}\"\n[diff \"evil\"]\n\tcommand = \"{inside}\"\n\ttextconv = \"{run}\"\n"
                 ),
             };
             let path = self.repo.join(".git/config");
