@@ -4,10 +4,9 @@
 //! In the app, a plain `kill(2)` or `killpg(2)`. In tests, a barrier that
 //! does not depend on the code it guards: a signal reaches only a process,
 //! a group or a session the test itself created and registered here when it
-//! spawned it, or a process (a group's leader) that descends from the test
-//! process itself (what the test, or the code it calls, started: a git the
-//! app stops on its time limit), which none of the person's applications
-//! does. Anything else is not sent; it is noted and fails the test,
+//! spawned it. One separate entry, `killpg_child`, serves the app's git
+//! on its time limit: it takes the `Child` the caller spawned and holds, and
+//! can signal that child's own process group and nothing else. Anything else is not sent; it is noted and fails the test,
 //! naming the process it would have hit. A sweep that goes wrong in a test
 //! (a mutant that drops "is it the jail's?", say) would otherwise freeze
 //! and kill every application of the person whose parent is launchd: the
@@ -25,6 +24,18 @@ pub(super) fn kill(pid: u32, signal: libc::c_int) -> bool {
     }
     // SAFETY: kill(2) on a pid the caller read from the process table.
     unsafe { libc::kill(pid as libc::pid_t, signal) == 0 }
+}
+
+/// Sends `signal` to the process group `child` leads (spawned with
+/// `process_group(0)` by the caller, which holds it): that group alone, the
+/// only one this entry can name. For `jailed_git`'s time limit; not for the
+/// reaper.
+#[cfg(unix)]
+pub(super) fn killpg_child(child: &std::process::Child, signal: libc::c_int) -> bool {
+    #[cfg(test)]
+    barrier::note_child_group(child.id(), signal);
+    // SAFETY: killpg(2) on the group of a child this process spawned.
+    unsafe { libc::killpg(child.id() as libc::pid_t, signal) == 0 }
 }
 
 /// Sends `signal` to every member of process group `group`.
@@ -125,6 +136,19 @@ mod barrier {
         ATTEMPTS.with(|attempts| attempts.borrow().clone())
     }
 
+    /// Notes a signal to a child's own group (`killpg_child`): always sent,
+    /// the entry cannot name another group.
+    pub(super) fn note_child_group(group: u32, signal: libc::c_int) {
+        ATTEMPTS.with(|attempts| {
+            attempts.borrow_mut().push(Attempt {
+                target: Target::Group(group),
+                signal,
+                started: started_of(group),
+                sent: true,
+            })
+        });
+    }
+
     /// Whether the test created `target`. A process that no longer exists
     /// is let through: nothing is there to hit.
     pub(super) fn lets(target: Target, signal: libc::c_int) -> bool {
@@ -132,19 +156,18 @@ mod barrier {
             Target::Process(pid) | Target::Group(pid) => pid,
         };
         let created = CREATED.lock().unwrap_or_else(|e| e.into_inner());
-        let ours = descends_from_this_test(leader)
-            || created.as_ref().is_some_and(|created| match target {
-                Target::Process(pid) => {
-                    // SAFETY: getsid(2) and getpgid(2) only read.
-                    let session = unsafe { libc::getsid(pid as libc::pid_t) };
-                    let group = unsafe { libc::getpgid(pid as libc::pid_t) };
-                    created.pids.contains(&pid)
-                        || (session < 0 && group < 0)
-                        || created.sessions.contains(&(session as u32))
-                        || created.sessions.contains(&(group as u32))
-                }
-                Target::Group(group) => created.sessions.contains(&group),
-            });
+        let ours = created.as_ref().is_some_and(|created| match target {
+            Target::Process(pid) => {
+                // SAFETY: getsid(2) and getpgid(2) only read.
+                let session = unsafe { libc::getsid(pid as libc::pid_t) };
+                let group = unsafe { libc::getpgid(pid as libc::pid_t) };
+                created.pids.contains(&pid)
+                    || (session < 0 && group < 0)
+                    || created.sessions.contains(&(session as u32))
+                    || created.sessions.contains(&(group as u32))
+            }
+            Target::Group(group) => created.sessions.contains(&group),
+        });
         drop(created);
         ATTEMPTS.with(|attempts| {
             attempts.borrow_mut().push(Attempt {
@@ -181,42 +204,6 @@ mod barrier {
             panic!("{line}");
         }
         false
-    }
-
-    /// Whether `pid` runs and descends from this test process.
-    fn descends_from_this_test(pid: u32) -> bool {
-        let own = std::process::id();
-        let mut current = pid;
-        for _ in 0..64 {
-            match parent_of(current) {
-                Some(parent) if parent == own => return true,
-                Some(parent) if parent > 1 => current = parent,
-                _ => return false,
-            }
-        }
-        false
-    }
-
-    #[cfg(target_os = "macos")]
-    fn parent_of(pid: u32) -> Option<u32> {
-        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
-        let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
-        // SAFETY: the buffer is one `proc_bsdinfo`.
-        let read = unsafe {
-            libc::proc_pidinfo(
-                pid as libc::c_int,
-                libc::PROC_PIDTBSDINFO,
-                0,
-                (&mut info as *mut libc::proc_bsdinfo).cast(),
-                size,
-            )
-        };
-        (read == size && info.pbi_status != 5).then_some(info.pbi_ppid)
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    fn parent_of(_pid: u32) -> Option<u32> {
-        None
     }
 
     #[cfg(target_os = "macos")]

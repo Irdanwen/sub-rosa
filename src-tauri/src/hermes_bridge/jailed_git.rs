@@ -146,8 +146,10 @@ pub(crate) fn confined_args<'a>(args: &[&'a str]) -> Vec<&'a str> {
     out
 }
 
-/// Runs `cmd` and collects its output, within `timeout`; past it, git's
-/// whole process group is killed (git starts its helpers in it).
+/// Runs `cmd` and collects its output, all within `timeout`: one deadline
+/// for the process and for its pipes (a process it started may hold them
+/// open after it ended). Past it, git's whole process group is killed (git
+/// starts its helpers in it) and the pipes are not waited on any longer.
 fn output_within(mut cmd: Command, timeout: std::time::Duration) -> Result<Output, AppError> {
     use std::io::Read as _;
     #[cfg(unix)]
@@ -155,31 +157,47 @@ fn output_within(mut cmd: Command, timeout: std::time::Duration) -> Result<Outpu
     cmd.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    let deadline = std::time::Instant::now() + timeout;
     let mut child = cmd
         .spawn()
         .map_err(|error| AppError::new("git_unavailable", error.to_string()))?;
-    let drain = |pipe: Option<Box<dyn std::io::Read + Send>>| {
+    let (sender, received) = std::sync::mpsc::channel::<(bool, Vec<u8>)>();
+    let drain = |pipe: Option<Box<dyn std::io::Read + Send>>, is_out: bool| {
+        let sender = sender.clone();
         std::thread::spawn(move || {
             let mut bytes = Vec::new();
             if let Some(mut pipe) = pipe {
                 let _ = pipe.read_to_end(&mut bytes);
             }
-            bytes
-        })
+            let _ = sender.send((is_out, bytes));
+        });
     };
-    let stdout = drain(
+    drain(
         child
             .stdout
             .take()
             .map(|pipe| Box::new(pipe) as Box<dyn std::io::Read + Send>),
+        true,
     );
-    let stderr = drain(
+    drain(
         child
             .stderr
             .take()
             .map(|pipe| Box::new(pipe) as Box<dyn std::io::Read + Send>),
+        false,
     );
-    let deadline = std::time::Instant::now() + timeout;
+    drop(sender);
+    let timed_out = |child: &mut std::process::Child| {
+        #[cfg(unix)]
+        super::jail_reaper_gate::killpg_child(child, libc::SIGKILL);
+        #[cfg(not(unix))]
+        let _ = child.kill();
+        let _ = child.wait();
+        AppError::new(
+            "git_timed_out",
+            "Git took too long on this folder and was stopped.",
+        )
+    };
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
@@ -187,22 +205,28 @@ fn output_within(mut cmd: Command, timeout: std::time::Duration) -> Result<Outpu
             Err(error) => return Err(AppError::new("git_unavailable", error.to_string())),
         }
         if std::time::Instant::now() >= deadline {
-            #[cfg(unix)]
-            super::jail_reaper_gate::killpg(child.id(), libc::SIGKILL);
-            #[cfg(not(unix))]
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(AppError::new(
-                "git_timed_out",
-                "Git took too long on this folder and was stopped.",
-            ));
+            return Err(timed_out(&mut child));
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     };
+    // The pipes, by the same deadline.
+    let (mut stdout, mut stderr, mut open) = (Vec::new(), Vec::new(), 2);
+    while open > 0 {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        match received.recv_timeout(left) {
+            Ok((true, bytes)) => stdout = bytes,
+            Ok((false, bytes)) => stderr = bytes,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                return Err(timed_out(&mut child));
+            }
+        }
+        open -= 1;
+    }
     Ok(Output {
         status,
-        stdout: stdout.join().unwrap_or_default(),
-        stderr: stderr.join().unwrap_or_default(),
+        stdout,
+        stderr,
     })
 }
 
@@ -278,8 +302,19 @@ pub(crate) static TEST_HOME: std::sync::Mutex<Option<PathBuf>> = std::sync::Mute
 /// default `$XDG_CONFIG_HOME/git/ignore`. A conditional include
 /// (`[includeIf]`) depends on the repository and is not followed, nor is a
 /// relative path: then the default applies. `None` when there is no such
-/// file.
+/// file. Found once per start (the configuration is the person's, read as
+/// they left it when the app started).
 pub(crate) fn person_excludes_file() -> Option<PathBuf> {
+    #[cfg(not(test))]
+    {
+        static FOUND: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+        FOUND.get_or_init(find_person_excludes_file).clone()
+    }
+    #[cfg(test)]
+    find_person_excludes_file()
+}
+
+fn find_person_excludes_file() -> Option<PathBuf> {
     #[cfg(test)]
     let home = TEST_HOME
         .lock()
@@ -307,7 +342,7 @@ fn read_excludes_setting(file: &Path, home: &Path, depth: usize, named: &mut Opt
     if depth > 8 {
         return;
     }
-    let Ok(text) = std::fs::read_to_string(file) else {
+    let Some(text) = read_person_config(file) else {
         return;
     };
     let mut section = String::new();
@@ -348,6 +383,16 @@ fn read_excludes_setting(file: &Path, home: &Path, depth: usize, named: &mut Opt
             _ => {}
         }
     }
+}
+
+/// One configuration file of the person's, through the confined reader: a
+/// regular file of a bounded size only (a pipe answers at once, never
+/// waited on). It may be a link to their dotfiles: resolved first, since the
+/// jail cannot write the person's home configuration.
+fn read_person_config(file: &Path) -> Option<String> {
+    let resolved = std::fs::canonicalize(file).ok()?;
+    let bytes = crate::confined_read::read_resolved(&resolved, 1 << 20).ok()?;
+    String::from_utf8(bytes).ok()
 }
 
 /// `~/...` and absolute paths; anything else (relative, `~user`) is not
@@ -1105,6 +1150,20 @@ mod tests {
         assert!(started.elapsed() < std::time::Duration::from_secs(10));
     }
 
+    /// A process git started that keeps the pipes open after git ended
+    /// counts against the same deadline: past it, its group is killed and
+    /// the pipes are not waited on.
+    #[test]
+    fn a_process_holding_the_pipes_stops_at_the_same_limit() {
+        let mut cmd = Command::new("/bin/sh");
+        cmd.args(["-c", "/bin/sleep 6 & echo started"]);
+        let started = std::time::Instant::now();
+        let result = output_within(cmd, std::time::Duration::from_secs(1));
+        let took = started.elapsed();
+        assert_eq!(result.expect_err("returned").code, "git_timed_out");
+        assert!(took < std::time::Duration::from_secs(3), "took {took:?}");
+    }
+
     /// The check and git run off the async runtime: a task beside them
     /// keeps running while git hangs, on a runtime of one thread.
     #[tokio::test(flavor = "current_thread")]
@@ -1276,6 +1335,21 @@ mod tests {
             found,
             std::fs::canonicalize(home.dir.path().join("ignores/global")).unwrap()
         );
+    }
+
+    /// A pipe named by the person's configuration (an include) is never
+    /// waited on: the default applies at once.
+    #[test]
+    fn a_pipe_in_the_persons_configuration_never_blocks() {
+        let home = super::planted::FakeHome::ignoring(".env\n");
+        let fifo = home.dir.path().join("more.cfg");
+        std::fs::remove_file(&fifo).unwrap();
+        let path = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
+        // SAFETY: a NUL-terminated path in the test's own folder.
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        let started = std::time::Instant::now();
+        let _ = person_excludes_file();
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
     }
 
     /// What the person ignores everywhere (their global excludes) stays

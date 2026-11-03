@@ -29,46 +29,52 @@ use crate::domain::types::AppError;
 /// read on the user's behalf, wherever they sit in it.
 const SENSITIVE_DIRECTORIES: &[&str] = &[".ssh", ".aws", ".azure", ".gnupg", ".kube", ".docker"];
 
-/// Exact file names that are credential material by convention.
-const SENSITIVE_FILES: &[&str] = &[
-    "auth.lock",
-    ".credentials",
-    "credentials",
-    "credentials.json",
-    "application_default_credentials.json",
-    "secrets",
-    "secrets.json",
-    ".netrc",
-    ".git-credentials",
-    "keychain-db",
-    "id_rsa",
-    "id_dsa",
-    "id_ecdsa",
-    "id_ed25519",
-];
-
-/// Suffixes that carry a key or a lock regardless of the stem.
-const SENSITIVE_SUFFIXES: &[&str] = &[".lock", ".key", ".pem", ".p12", ".pfx"];
-
-/// The files whose content the app never sends anywhere (to the council's
-/// seats, into the code review), whatever git says about them: a secret a
-/// session's folder holds, ignored or not (ADR-0140, third addendum of
-/// 2026-11-03). One leading or one trailing `*` at most; compared without
-/// case. Also the pathspecs that keep them out of a diff
-/// (`secret_pathspecs`). Meant to be reused (C3.5).
+/// The one list of secret files: what the app never sends anywhere (to the
+/// council's seats, into the code review) and never opens on the person's
+/// behalf (the Files panel), whatever git says about them (ADR-0140, third
+/// and fourth addenda of 2026-11-03). Recognized by their name only: a
+/// secret copied or hard-linked under a plain name is not. One leading or
+/// one trailing `*` at most; compared without case (the file systems of
+/// macOS and Windows do not tell case apart). Also the git pathspecs that
+/// keep them out of a diff (`secret_pathspecs`). Meant to be reused (C3.5).
 pub const SECRET_FILE_PATTERNS: &[&str] = &[
+    // Environment files.
     ".env",
     ".env.*",
+    ".env-*",
+    "*.env",
+    // Keys and key stores.
     "*.pem",
     "*.key",
-    "id_rsa*",
-    "id_ed25519*",
     "*.p12",
+    "*.pfx",
+    "*.jks",
+    "*.keystore",
+    "*.ppk",
+    "id_rsa*",
+    "id_dsa*",
+    "id_ecdsa*",
+    "id_ed25519*",
+    // Credential files.
     ".npmrc",
     ".pypirc",
     ".netrc",
+    ".pgpass",
+    ".git-credentials",
+    ".credentials",
     "credentials*",
+    "*credentials.json",
+    "*service-account.json",
+    "secrets",
+    "secrets.*",
+    "auth.lock",
+    "keychain-db",
 ];
+
+/// Not secrets, but never opened on the person's behalf either: a lock the
+/// runtime holds (`*.lock`). Only the Files panel's question
+/// (`is_sensitive_component`) adds it.
+const LOCK_SUFFIX: &str = ".lock";
 
 fn matches_pattern(name: &str, pattern: &str) -> bool {
     if let Some(suffix) = pattern.strip_prefix('*') {
@@ -87,19 +93,21 @@ pub fn is_secret_file(relative: &Path) -> bool {
     let names: Vec<String> = relative
         .components()
         .filter_map(|component| match component {
-            Component::Normal(name) => name.to_str().map(str::to_ascii_lowercase),
+            Component::Normal(name) => Some(name.to_string_lossy().to_lowercase()),
             _ => None,
         })
         .collect();
     let in_store = names
         .iter()
         .any(|name| SENSITIVE_DIRECTORIES.contains(&name.as_str()));
-    in_store
-        || names.last().is_some_and(|name| {
-            SECRET_FILE_PATTERNS
-                .iter()
-                .any(|pattern| matches_pattern(name, pattern))
-        })
+    in_store || names.last().is_some_and(|name| is_secret_name(name))
+}
+
+/// Whether one lowercased file name is in `SECRET_FILE_PATTERNS`.
+fn is_secret_name(name: &str) -> bool {
+    SECRET_FILE_PATTERNS
+        .iter()
+        .any(|pattern| matches_pattern(name, pattern))
 }
 
 /// Git pathspecs that leave every secret file out of a command (a diff,
@@ -146,17 +154,10 @@ pub fn is_sensitive_path(path: &Path) -> bool {
 /// Hermes bridge and the media gallery each used to check on their own — when
 /// two lists are merged the wider one wins, or factoring loses coverage.
 pub fn is_sensitive_component(name: &str) -> bool {
-    let normalized = name.to_ascii_lowercase();
+    let normalized = name.to_lowercase();
     SENSITIVE_DIRECTORIES.contains(&normalized.as_str())
-        || SENSITIVE_FILES.contains(&normalized.as_str())
-        || normalized == ".env"
-        || normalized.starts_with(".env.")
-        || SECRET_FILE_PATTERNS
-            .iter()
-            .any(|pattern| matches_pattern(&normalized, pattern))
-        || SENSITIVE_SUFFIXES
-            .iter()
-            .any(|suffix| normalized.ends_with(suffix))
+        || is_secret_name(&normalized)
+        || normalized.ends_with(LOCK_SUFFIX)
 }
 
 /// The canonical form of an **existing** path, once it is proven to sit under
@@ -438,6 +439,24 @@ mod tests {
             "config/credentials.json",
             ".ssh/config",
             "home/.aws/config",
+            // Every name the re-audit found still sent.
+            "id_ecdsa",
+            "id_dsa",
+            "secrets.json",
+            ".git-credentials",
+            ".pgpass",
+            "client.pfx",
+            "release.jks",
+            "putty.ppk",
+            "prod.env",
+            ".env-prod",
+            "service-account.json",
+            "gcp/my-service-account.json",
+            "application_default_credentials.json",
+            "auth.lock",
+            "keychain-db",
+            ".ENV",
+            "Prod.ENV",
         ] {
             assert!(is_secret_file(Path::new(name)), "{name}");
         }
