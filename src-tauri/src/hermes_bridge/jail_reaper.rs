@@ -205,7 +205,7 @@ impl Belt {
             Some("the app or one of its ancestors")
         } else if seen.uid != self.uid {
             Some("another user's")
-        } else if self.floor.is_none_or(|floor| seen.started < floor) {
+        } else if self.floor.map_or(true, |floor| seen.started < floor) {
             Some("started before the jailed spawn")
         } else {
             None
@@ -1213,7 +1213,7 @@ mod tests {
         let _ = reader.wait();
         let mut gone = false;
         for _ in 0..40 {
-            if seen(child).is_none_or(|seen| seen.status == SZOMB) {
+            if seen(child).map_or(true, |seen| seen.status == SZOMB) {
                 gone = true;
                 break;
             }
@@ -1271,7 +1271,7 @@ mod tests {
         let _ = reader.wait();
         let mut gone = false;
         for _ in 0..40 {
-            if seen(member).is_none_or(|seen| seen.status == SZOMB) {
+            if seen(member).map_or(true, |seen| seen.status == SZOMB) {
                 gone = true;
                 break;
             }
@@ -1420,7 +1420,7 @@ mod tests {
         let old_alive = seen(old).is_some_and(|seen| seen.status != SZOMB);
         let mut new_gone = false;
         for _ in 0..40 {
-            if seen(new).is_none_or(|seen| seen.status == SZOMB) {
+            if seen(new).map_or(true, |seen| seen.status == SZOMB) {
                 new_gone = true;
                 break;
             }
