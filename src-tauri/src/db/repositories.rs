@@ -5306,9 +5306,8 @@ fn council_verdict_from_row(row: sqlx_sqlite::SqliteRow) -> CouncilVerdictDto {
     }
 }
 
-/// A JSON column that must never be able to break a read.
-///
-/// A malformed blob degrades to "empty" rather than to an error: the cycle it
+/// A JSON column that must never be able to break a read. A malformed
+/// blob degrades to "empty" rather than to an error: the cycle it
 /// belongs to is still worth showing, and every caller here treats an empty
 /// list as "nothing yet", which is the safe reading.
 fn parse_json_column<T: serde::de::DeserializeOwned + Default>(raw: Option<String>) -> T {

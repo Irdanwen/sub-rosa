@@ -111,7 +111,7 @@ fn plain_components(relative: &Path) -> Result<Vec<&std::ffi::OsStr>, Refused> {
     Ok(names)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
 fn open_beneath(root: &Path, relative: &Path) -> Result<std::fs::File, Refused> {
     use std::os::fd::{FromRawFd as _, OwnedFd};
     use std::os::unix::ffi::OsStrExt as _;
@@ -164,7 +164,7 @@ fn open_beneath(root: &Path, relative: &Path) -> Result<std::fs::File, Refused> 
     Ok(file)
 }
 
-#[cfg(not(unix))]
+#[cfg(not(all(unix, not(any(target_os = "ios", target_os = "android")))))]
 fn open_beneath(root: &Path, relative: &Path) -> Result<std::fs::File, Refused> {
     // No jail on this system: the same rules, checked component by
     // component, then opened.
@@ -206,7 +206,7 @@ fn read_bounded(file: std::fs::File, limit: u64, prefix: bool) -> Result<(Vec<u8
 }
 
 #[cfg(test)]
-#[cfg(unix)]
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
 mod tests {
     use super::*;
 
