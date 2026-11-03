@@ -357,6 +357,8 @@ pub(crate) mod planted {
         marks: PathBuf,
         secret: String,
         listener: std::net::TcpListener,
+        script: PathBuf,
+        inside: PathBuf,
     }
 
     /// The token the planted script prints.
@@ -466,35 +468,56 @@ pub(crate) mod planted {
         git(&["commit", "-qm", "one"]);
         std::fs::write(repo.join("a.txt"), "two\n").unwrap();
         std::fs::write(repo.join("new.txt"), "new\n").unwrap();
-        let run = script.display().to_string();
-        let config = match plant {
-            Plant::Neutralized => format!(
-                "\n[core]\n\tfsmonitor = \"{run}\"\n\tpager = \"{run}\"\n\tsshCommand = \"{run}\"\n[diff]\n\texternal = \"{run}\"\n"
-            ),
-            Plant::ProgramsInTheTree | Plant::Programs => format!(
-                "\n[core]\n\tfsmonitor = \"{run}\"\n[filter \"evil\"]\n\tclean = \"{run} clean\"\n\tsmudge = \"{run} smudge\"\n[diff]\n\texternal = \"{run}\"\n[diff \"evil\"]\n\tcommand = \"{run}\"\n\ttextconv = \"{run}\"\n"
-            ),
-        };
-        let path = repo.join(".git/config");
-        let mut existing = std::fs::read_to_string(&path).unwrap();
-        existing.push_str(&config);
-        std::fs::write(&path, existing).unwrap();
-        std::fs::write(repo.join(".gitattributes"), "* filter=evil diff=evil\n").unwrap();
-        if plant == Plant::Programs {
-            std::fs::create_dir_all(repo.join(".git/info")).unwrap();
-            std::fs::write(
-                repo.join(".git/info/attributes"),
-                "* filter=evil diff=evil\n",
-            )
+        // A script inside the repository too, as the jail can write one:
+        // readable there, so only the profile's exec rule stops it.
+        let inside = repo.join(".git/planted-inside.sh");
+        std::fs::write(&inside, format!("#!/bin/sh\necho {TOKEN}\nexit 0\n")).unwrap();
+        std::fs::set_permissions(&inside, std::os::unix::fs::PermissionsExt::from_mode(0o755))
             .unwrap();
-        }
-        Planted {
+        let planted = Planted {
             dir,
             repo,
             secret_path,
             marks,
             secret,
             listener,
+            script,
+            inside,
+        };
+        planted.plant(plant);
+        planted
+    }
+
+    impl Planted {
+        /// Plants `plant` in the repository (again, or later).
+        pub(crate) fn plant(&self, plant: Plant) {
+            let run = self.script.display().to_string();
+            let inside = self.inside.display().to_string();
+            let config = match plant {
+                Plant::Neutralized => format!(
+                    "\n[core]\n\tfsmonitor = \"{run}\"\n\tpager = \"{run}\"\n\tsshCommand = \"{run}\"\n[diff]\n\texternal = \"{run}\"\n"
+                ),
+                Plant::ProgramsInTheTree | Plant::Programs => format!(
+                    "\n[core]\n\tfsmonitor = \"{run}\"\n[filter \"evil\"]\n\tclean = \"{run} clean\"\n\tsmudge = \"{run} smudge\"\n[diff]\n\texternal = \"{inside}\"\n[diff \"evil\"]\n\tcommand = \"{run}\"\n\ttextconv = \"{run}\"\n"
+                ),
+            };
+            let path = self.repo.join(".git/config");
+            let mut existing = std::fs::read_to_string(&path).unwrap();
+            existing.push_str(&config);
+            std::fs::write(&path, existing).unwrap();
+            std::fs::write(
+                self.repo.join(".gitattributes"),
+                "* filter=evil diff=evil\n",
+            )
+            .unwrap();
+            if plant == Plant::Programs {
+                std::fs::create_dir_all(self.repo.join(".git/info")).unwrap();
+                std::fs::write(
+                    self.repo.join(".git/info/attributes"),
+                    "* filter=evil diff=evil\n",
+                )
+                .unwrap();
+            }
         }
     }
 
@@ -609,6 +632,36 @@ mod tests {
         let planted = planted_repository(Plant::Programs);
         let sandbox = sandbox_for(&planted.repo).unwrap();
         let outputs = run_the_apps_reads(|| build(&planted.repo, Some(&sandbox), false));
+        planted.assert_untouched(&outputs);
+    }
+
+    /// A program planted between the check and the command (the jail
+    /// writes the folder while the app reads it) runs nothing either: the
+    /// profile, not the check, holds there.
+    #[test]
+    fn a_program_planted_after_the_check_runs_nothing() {
+        let planted = planted_repository(Plant::Neutralized);
+        let reads = [
+            vec!["diff", "HEAD"],
+            vec!["status", "--porcelain"],
+            vec!["add", "-A"],
+            vec!["write-tree"],
+        ];
+        let commands: Vec<Command> = reads
+            .iter()
+            .map(|args| {
+                let mut cmd = command(&planted.repo).unwrap();
+                cmd.args(args);
+                cmd
+            })
+            .collect();
+        planted.plant(Plant::Programs);
+        let mut outputs = Vec::new();
+        for mut cmd in commands {
+            let output = cmd.output().unwrap();
+            outputs.push(output.stdout);
+            outputs.push(output.stderr);
+        }
         planted.assert_untouched(&outputs);
     }
 
