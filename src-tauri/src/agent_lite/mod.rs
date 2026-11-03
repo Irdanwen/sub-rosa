@@ -1254,6 +1254,11 @@ async fn collect_stream(
             on_text(&reply.content[before..]);
         }
     }
+    // An error Carpe Diem told inside the stream: the turn failed, it is not
+    // the whole answer its `[DONE]` would make it look like.
+    if let Some(error) = frames.take_error() {
+        return Err(error);
+    }
     if !frames.is_finished() && !reply.is_empty() {
         return Err(crate::sse_lines::cut_off_reply());
     }

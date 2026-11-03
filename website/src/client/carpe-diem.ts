@@ -69,6 +69,43 @@ export async function failure(response: Response): Promise<CarpeDiemError> {
   return new CarpeDiemError(code, response.status, message);
 }
 
+/**
+ * The HTTP status an error told inside a stream stands for. Carpe Diem can
+ * only say a request failed with a 200 already sent (an upstream that broke
+ * after its first token, a router race silent past its guard): as a
+ * `data: {"error": {…}}` frame, in OpenAI's envelope, then `[DONE]`. Its
+ * `type` says which refusal it is, so the app words it like the same refusal
+ * answered as a status.
+ */
+function statusOfStreamError(type: unknown, code: unknown): number {
+  if (type === "insufficient_quota" || code === "PAYMENT_REQUIRED") return 402;
+  if (type === "rate_limit_error") return 429;
+  if (type === "authentication_error") return 401;
+  if (type === "permission_error") return 403;
+  if (type === "invalid_request_error") return 400;
+  return 502;
+}
+
+/** An error frame of a stream, as the error it is; null for any other frame. */
+export function streamFailure(frame: Record<string, unknown>): CarpeDiemError | null {
+  const error = frame.error;
+  if (!error) return null;
+  const detail = typeof error === "object" ? (error as Record<string, unknown>) : {};
+  const message =
+    typeof error === "string"
+      ? error
+      : typeof detail.message === "string" && detail.message
+        ? detail.message
+        : "The model stopped with an error.";
+  const code =
+    typeof detail.code === "string" && detail.code
+      ? detail.code
+      : typeof frame.code === "string" && frame.code
+        ? frame.code
+        : "stream_error";
+  return new CarpeDiemError(code, statusOfStreamError(detail.type, code), message);
+}
+
 /** A JSON `POST` with the browser's key: no cookie, no redirect, no referrer. */
 export function request(key: string, body: unknown, signal?: AbortSignal): RequestInit {
   return {
@@ -166,6 +203,9 @@ export async function streamCompletion(
   const decoder = new TextDecoder();
   let buffer = "";
   let done = false;
+  // An error told in the stream ends the reply as failed: its `[DONE]` must
+  // not pass what came before it off as the whole answer.
+  let failed: CarpeDiemError | null = null;
   const line = (raw: string) => {
     const text = raw.trim();
     if (!text.startsWith("data:")) return;
@@ -174,13 +214,19 @@ export async function streamCompletion(
       done = true;
       return;
     }
+    let frame: Record<string, unknown>;
     try {
-      const before = reply.content.length;
-      applyFrame(reply, JSON.parse(data) as Record<string, unknown>);
-      if (reply.content.length > before) onText(reply.content.slice(before));
+      frame = JSON.parse(data) as Record<string, unknown>;
     } catch {
       // A malformed frame is skipped, the next one still counts.
+      return;
     }
+    if (!frame || typeof frame !== "object") return;
+    failed ??= streamFailure(frame);
+    if (failed) return;
+    const before = reply.content.length;
+    applyFrame(reply, frame);
+    if (reply.content.length > before) onText(reply.content.slice(before));
   };
   while (true) {
     const { value, done: ended } = await reader.read();
@@ -189,9 +235,15 @@ export async function streamCompletion(
     const lines = buffer.split("\n");
     buffer = lines.pop() ?? "";
     for (const raw of lines) line(raw);
+    if (failed) break;
+  }
+  if (failed) {
+    await reader.cancel().catch(() => undefined);
+    throw failed;
   }
   buffer += decoder.decode();
   if (buffer) line(buffer);
+  if (failed) throw failed;
   if (!done && !reply.finishReason && (reply.content || reply.toolCalls.length))
     throw new CarpeDiemError("reply_cut_off", 502, "The reply was cut off.");
   return finish(reply);

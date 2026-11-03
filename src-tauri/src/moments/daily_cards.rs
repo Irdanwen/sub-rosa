@@ -117,8 +117,11 @@ mod tests {
     #[tokio::test]
     async fn a_card_travels_once_per_device_and_day_with_its_agenda() {
         let pool = store(Some("mac")).await;
-        record(&pool, &card("2026-10-08"), "delivered").await;
-        record(&pool, &card("2026-10-08"), "quiet").await;
+        // Today: a fixed day falls out of the KEEP_DAYS window and is pruned
+        // by the very write under test (red since 2026-10-22).
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        record(&pool, &card(&today), "delivered").await;
+        record(&pool, &card(&today), "quiet").await;
         let rows = query("SELECT id, device_name, card, status FROM daily_brief_cards")
             .fetch_all(&pool)
             .await
@@ -128,7 +131,7 @@ mod tests {
             1,
             "a second write of the morning is the same object"
         );
-        assert_eq!(rows[0].get::<String, _>("id"), card_id("mac", "2026-10-08"));
+        assert_eq!(rows[0].get::<String, _>("id"), card_id("mac", &today));
         assert_eq!(rows[0].get::<String, _>("status"), "delivered");
         let stored: DailyCard = serde_json::from_str(&rows[0].get::<String, _>("card")).unwrap();
         assert_eq!(stored.agenda.unwrap().first_title, "Stand-up");
