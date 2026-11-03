@@ -327,7 +327,9 @@ fn sweep(initial: Vec<u32>, mark: Option<&str>, orphans: bool, floor: Option<Sta
     let own_session = unsafe { libc::getsid(0) };
     let needle = mark.map(mark_needle);
     let mut frozen: HashSet<(u32, StartTime)> = HashSet::new();
-    // A frozen process cannot end, so its pid stays its own.
+    // A frozen process ends only if something kills it (another process of
+    // the same jail may): every signal below checks first that the pid is
+    // still the process found, by its start time.
     let mut frozen_pids: BTreeSet<u32> = BTreeSet::new();
     let mut frozen_groups: BTreeSet<u32> = BTreeSet::new();
     // Whether a process carries the mark or is an orphan under the jail:
@@ -356,9 +358,12 @@ fn sweep(initial: Vec<u32>, mark: Option<&str>, orphans: bool, floor: Option<Sta
             &mut answers,
             &mut |pid, seen| {
                 let answer = (orphans && orphan_of_the_jail(pid, seen, &mut jailed))
-                    || needle
+                    // A carrier of the mark counts only under the jail: the
+                    // mark is a value the jail knows and can write anywhere.
+                    || (needle
                         .as_deref()
-                        .is_some_and(|needle| environment_holds(pid, needle));
+                        .is_some_and(|needle| environment_carries(pid, needle))
+                        && runs_under_the_jail(pid));
                 (answer, same_process(pid, seen.started))
             },
         );
@@ -388,11 +393,12 @@ fn sweep(initial: Vec<u32>, mark: Option<&str>, orphans: bool, floor: Option<Sta
                 && !leader_refused
                 && session > 0
                 && session != own_session
+                && same_process(pid, seen.started)
                 && frozen_groups.insert(seen.group)
             {
                 super::jail_reaper_gate::killpg(seen.group, libc::SIGSTOP);
             }
-            super::jail_reaper_gate::kill(pid, libc::SIGSTOP);
+            stop_if_same(pid, seen.started);
             if same_process(pid, seen.started) {
                 frozen.insert((pid, seen.started));
                 frozen_pids.insert(pid);
@@ -404,15 +410,29 @@ fn sweep(initial: Vec<u32>, mark: Option<&str>, orphans: bool, floor: Option<Sta
     // A sweep that ended quietly left every process it found stopped (a
     // member of a frozen group or a child of a frozen process still running
     // is found again, and a pass that finds one is not quiet), and a
-    // stopped process starts nothing: one kill each is enough.
+    // stopped process starts nothing: one kill each is enough. Each by its
+    // pid and start time, checked just before the signal; a frozen group's
+    // members one by one, never its number, which may have been reused.
     let mut killed = 0;
-    for (pid, _) in &frozen {
-        if kill_one(*pid) {
+    for (pid, started) in &frozen {
+        if kill_if_same(*pid, *started) {
             killed += 1;
         }
     }
-    for group in &frozen_groups {
-        super::jail_reaper_gate::killpg(*group, libc::SIGKILL);
+    if !frozen_groups.is_empty() {
+        for pid in all_pids() {
+            let Some(seen) = seen(pid) else {
+                continue;
+            };
+            if pid != own
+                && seen.status != SZOMB
+                && frozen_groups.contains(&seen.group)
+                && belt.refuses(pid, &seen).is_none()
+                && kill_if_same(pid, seen.started)
+            {
+                killed += 1;
+            }
+        }
     }
     if killed > 0 {
         eprintln!("hermes runtime: stopped {killed} process(es) its jail had left behind");
@@ -432,7 +452,21 @@ fn sweep(
 
 #[cfg(target_os = "macos")]
 fn mark_needle(mark: &str) -> Vec<u8> {
-    format!("{JAIL_MARK_ENV}={mark}\0").into_bytes()
+    format!("{JAIL_MARK_ENV}={mark}").into_bytes()
+}
+
+/// Freezes `pid` if it is still the process that started at `started`.
+#[cfg(target_os = "macos")]
+fn stop_if_same(pid: u32, started: StartTime) -> bool {
+    same_process(pid, started) && super::jail_reaper_gate::kill(pid, libc::SIGSTOP)
+}
+
+/// Kills `pid` if it is still the process that started at `started`: a pid
+/// freed since (its process killed by another of the jail) and given to
+/// someone else is left alone.
+#[cfg(target_os = "macos")]
+fn kill_if_same(pid: u32, started: StartTime) -> bool {
+    same_process(pid, started) && super::jail_reaper_gate::kill(pid, libc::SIGKILL)
 }
 
 /// The runtime's descendants by parent link, the processes of its session
@@ -451,7 +485,7 @@ fn gather(leader: u32, mark: &str) -> Vec<u32> {
             // SAFETY: getsid(2) on a pid read from the process table.
             let session = unsafe { libc::getsid(*pid as libc::pid_t) };
             session == leader as libc::pid_t
-                || environment_holds(*pid, &needle)
+                || (environment_carries(*pid, &needle) && runs_under_the_jail(*pid))
                 || (*parent == 1 && runs_under_the_jail(*pid))
         })
         .map(|(pid, _)| *pid)
@@ -625,16 +659,6 @@ fn parent_of(pid: u32) -> Option<u32> {
     seen(pid).map(|seen| seen.parent)
 }
 
-#[cfg(unix)]
-fn kill_one(pid: u32) -> bool {
-    super::jail_reaper_gate::kill(pid, libc::SIGKILL)
-}
-
-#[cfg(not(unix))]
-fn kill_one(_pid: u32) -> bool {
-    false
-}
-
 #[cfg(target_os = "macos")]
 fn all_pids() -> Vec<u32> {
     // SAFETY: a null buffer asks for the count only.
@@ -656,10 +680,12 @@ fn all_pids() -> Vec<u32> {
         .collect()
 }
 
-/// Whether the arguments and environment of `pid` (`KERN_PROCARGS2`, which
-/// only a process of the same account may read) hold `needle`.
+/// Whether the environment of `pid` (`KERN_PROCARGS2`, which only a process
+/// of the same account may read) holds `entry` as one whole entry
+/// (`SUBROSA_JAIL_MARK=<mark>`): never in an argument, never inside another
+/// entry (a `PWD` naming a folder called after the mark).
 #[cfg(target_os = "macos")]
-fn environment_holds(pid: u32, needle: &[u8]) -> bool {
+fn environment_carries(pid: u32, entry: &[u8]) -> bool {
     // One buffer per thread, reused: a sweep asks about every process
     // several times a second.
     thread_local! {
@@ -681,11 +707,40 @@ fn environment_holds(pid: u32, needle: &[u8]) -> bool {
                 0,
             )
         };
-        read == 0
-            && buffer[..size.min(buffer.len())]
-                .windows(needle.len())
-                .any(|window| window == needle)
+        read == 0 && environment_entries_hold(&buffer[..size.min(buffer.len())], entry)
     })
+}
+
+/// In a `KERN_PROCARGS2` area (argc, the executable's path, padding, argc
+/// arguments, then the environment's entries until an empty one), whether
+/// one environment entry is exactly `entry`.
+#[cfg(target_os = "macos")]
+fn environment_entries_hold(area: &[u8], entry: &[u8]) -> bool {
+    let Some(argc) = area.get(..4).and_then(|bytes| bytes.try_into().ok()) else {
+        return false;
+    };
+    let Ok(argc) = usize::try_from(i32::from_ne_bytes(argc)) else {
+        return false;
+    };
+    let rest = &area[4..];
+    // The executable's path, then the padding after it.
+    let Some(path_end) = rest.iter().position(|byte| *byte == 0) else {
+        return false;
+    };
+    let rest = &rest[path_end..];
+    let start = rest
+        .iter()
+        .position(|byte| *byte != 0)
+        .unwrap_or(rest.len());
+    let mut strings = rest[start..].split(|byte| *byte == 0);
+    for _ in 0..argc {
+        if strings.next().is_none() {
+            return false;
+        }
+    }
+    strings
+        .take_while(|string| !string.is_empty())
+        .any(|string| string == entry)
 }
 
 #[cfg(test)]
@@ -704,7 +759,7 @@ mod tests {
         let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
         let mark = new_mark();
         let pid_file = tempfile::NamedTempFile::new().unwrap();
-        let mut runtime = std::process::Command::new("/usr/bin/python3");
+        let mut runtime = jailed_python();
         runtime
             .args([
                 "-I",
@@ -769,6 +824,20 @@ mod tests {
     /// The child gives up the app's responsibility (the private disclaim
     /// attribute) and its session in one `posix_spawn`, with no environment.
     const DISCLAIMED_SPAWN: &str = "import ctypes,os,sys,time\nlibc = ctypes.CDLL(None)\nif os.fork() == 0:\n    attr = ctypes.c_void_p()\n    libc.posix_spawnattr_init(ctypes.byref(attr))\n    d = libc.responsibility_spawnattrs_setdisclaim\n    d.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_int]\n    d(ctypes.byref(attr), 1)\n    libc.posix_spawnattr_setflags.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_short]\n    libc.posix_spawnattr_setflags(ctypes.byref(attr), 0x0400)\n    prog = sys.argv[2].encode()\n    argv = (ctypes.c_char_p * 3)(prog, b'120', None)\n    envp = (ctypes.c_char_p * 1)(None)\n    pid = ctypes.c_int()\n    libc.posix_spawn.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.c_char_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, ctypes.c_void_p]\n    libc.posix_spawn(ctypes.byref(pid), prog, None, ctypes.byref(attr), argv, envp)\n    open(sys.argv[1], 'w').write(str(pid.value))\n    os._exit(0)\ntime.sleep(120)\n";
+
+    /// Python under a profile like the jail's: a carrier of the mark counts
+    /// only under the jail (ADR-0140, D2 of the audit).
+    fn jailed_python() -> std::process::Command {
+        static PROFILE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+        let profile = PROFILE.get_or_init(|| {
+            let path = std::env::temp_dir().join(format!("sr-jail-like-{}.sb", std::process::id()));
+            std::fs::write(&path, jail_like()).unwrap();
+            path
+        });
+        let mut command = std::process::Command::new(super::super::SANDBOX_EXEC_PATH);
+        command.arg("-f").arg(profile).arg("/usr/bin/python3");
+        command
+    }
 
     /// A runtime under `profile` whose child double-forks, leaves the
     /// session and execs `program` with an empty environment: an orphan of
@@ -1169,7 +1238,7 @@ mod tests {
         let script = "import os,sys,time\nchild = os.fork()\nif child == 0:\n    os.setsid()\n    os.execve('/bin/sleep', ['/bin/sleep', '120'], {})\nopen(sys.argv[1], 'w').write(str(child))\ntime.sleep(120)\n";
         let mark = new_mark();
         let pid_file = tempfile::NamedTempFile::new().unwrap();
-        let mut reader = std::process::Command::new("/usr/bin/python3");
+        let mut reader = jailed_python();
         reader
             .args(["-I", "-c", script])
             .arg(pid_file.path())
@@ -1196,13 +1265,13 @@ mod tests {
         // Until the child runs `sleep`, without the mark.
         let needle = mark_needle(&mark);
         for _ in 0..40 {
-            if !environment_holds(child, &needle) {
+            if !environment_carries(child, &needle) {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         assert!(
-            !environment_holds(child, &needle),
+            !environment_carries(child, &needle),
             "the child kept the mark"
         );
         // A loaded machine: the next pass comes after the parent, were it
@@ -1231,7 +1300,7 @@ mod tests {
         let script = "import os,sys,time\na = os.fork()\nif a == 0:\n    b = os.fork()\n    if b == 0:\n        time.sleep(0.3)\n        os.execve('/bin/sleep', ['/bin/sleep', '120'], {})\n    open(sys.argv[1], 'w').write(str(b))\n    os._exit(0)\nos.waitpid(a, 0)\ntime.sleep(120)\n";
         let mark = new_mark();
         let pid_file = tempfile::NamedTempFile::new().unwrap();
-        let mut reader = std::process::Command::new("/usr/bin/python3");
+        let mut reader = jailed_python();
         reader
             .args(["-I", "-c", script])
             .arg(pid_file.path())
@@ -1256,14 +1325,14 @@ mod tests {
         assert!(member > 0, "the member never started");
         let needle = mark_needle(&mark);
         for _ in 0..40 {
-            if parent_of(member) == Some(1) && !environment_holds(member, &needle) {
+            if parent_of(member) == Some(1) && !environment_carries(member, &needle) {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         assert_eq!(parent_of(member), Some(1), "not an orphan");
         assert!(
-            !environment_holds(member, &needle),
+            !environment_carries(member, &needle),
             "the member kept the mark"
         );
         assert_eq!(seen(member).map(|seen| seen.group), Some(reader.id()));
@@ -1349,7 +1418,7 @@ mod tests {
         let spawn = |mark: &str| {
             // Not `/bin/sleep`: the system hides an Apple program's
             // environment, mark included.
-            let mut sleeper = std::process::Command::new("/usr/bin/python3");
+            let mut sleeper = jailed_python();
             sleeper
                 .args(["-I", "-c", "import time\ntime.sleep(120)\n"])
                 .env_clear()
@@ -1370,12 +1439,12 @@ mod tests {
         let needle = mark_needle(&mark);
         for id in [older.id(), newer.id()] {
             for _ in 0..60 {
-                if environment_holds(id, &needle) {
+                if environment_carries(id, &needle) {
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
-            assert!(environment_holds(id, &needle), "the mark is not readable");
+            assert!(environment_carries(id, &needle), "the mark is not readable");
         }
         assert!(seen(older.id()).unwrap().started < mark_floor(&mark).unwrap());
         assert!(seen(newer.id()).unwrap().started >= mark_floor(&mark).unwrap());
@@ -1458,6 +1527,153 @@ mod tests {
         assert!(new_gone, "the newer orphan outlived the sweep");
     }
 
+    /// The mark is one whole environment entry: never inside another entry
+    /// (a `PWD` naming a folder called after the mark), never an argument.
+    #[test]
+    fn the_mark_is_a_whole_environment_entry() {
+        let entry = b"SUBROSA_JAIL_MARK=jail-1-000001-abc";
+        let area = |argv: &[&[u8]], env: &[&[u8]]| {
+            let mut area = (argv.len() as i32).to_ne_bytes().to_vec();
+            area.extend_from_slice(b"/usr/bin/tool\0\0\0\0");
+            for arg in argv {
+                area.extend_from_slice(arg);
+                area.push(0);
+            }
+            for var in env {
+                area.extend_from_slice(var);
+                area.push(0);
+            }
+            area.push(0);
+            area
+        };
+        let exact = area(&[b"tool"], &[b"HOME=/x", entry]);
+        assert!(environment_entries_hold(&exact, entry));
+        let in_pwd = area(
+            &[b"tool"],
+            &[b"PWD=/work/SUBROSA_JAIL_MARK=jail-1-000001-abc"],
+        );
+        assert!(!environment_entries_hold(&in_pwd, entry));
+        let as_argument = area(&[b"tool", entry], &[b"HOME=/x"]);
+        assert!(!environment_entries_hold(&as_argument, entry));
+        let longer = area(&[b"tool"], &[b"SUBROSA_JAIL_MARK=jail-1-000001-abcd"]);
+        assert!(!environment_entries_hold(&longer, entry));
+    }
+
+    /// The final kill checks the pid is still the process found: a wrong
+    /// start time (the pid given to another process since) sends nothing.
+    #[test]
+    fn a_kill_checks_the_start_time_first() {
+        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let mark = new_mark();
+        let mut sleeper = std::process::Command::new("/bin/sleep");
+        sleeper
+            .arg("120")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        super::super::sandbox_profile::own_session(&mut sleeper);
+        let mut sleeper = sleeper.spawn().unwrap();
+        let _guard = LoopGuard::new(sleeper.id(), &mark);
+        let started = seen(sleeper.id()).unwrap().started;
+        let other = (started.0.saturating_sub(10), started.1);
+        assert!(!kill_if_same(sleeper.id(), other));
+        assert!(sleeper.try_wait().unwrap().is_none(), "killed by pid alone");
+        assert!(kill_if_same(sleeper.id(), started));
+        assert!(sleeper.wait().is_ok());
+    }
+
+    /// Outside the jail, a process is never taken for a carrier of the
+    /// mark: not with the mark inside its `PWD`, not as an argument, not
+    /// even with the exact entry. Through the barrier, in note-only mode:
+    /// the sweep may not even aim at them. A jailed carrier is the control.
+    #[test]
+    fn a_process_outside_the_jail_is_never_taken_for_the_marks() {
+        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let mark = new_mark();
+        let entry = format!("{JAIL_MARK_ENV}={mark}");
+        let sleeping = "import time\ntime.sleep(120)\n";
+        // /usr/bin/python3 hands over to an interpreter whose environment
+        // the system shows (an Apple program's it hides).
+        let spawn = |mut command: std::process::Command| {
+            command
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            super::super::sandbox_profile::own_session(&mut command);
+            command.spawn().unwrap()
+        };
+        let mut in_pwd = std::process::Command::new("/usr/bin/python3");
+        in_pwd
+            .args(["-I", "-c", sleeping])
+            .env_clear()
+            .env("PWD", format!("/work/{entry}"));
+        let mut in_pwd = spawn(in_pwd);
+        let mut as_argument = std::process::Command::new("/usr/bin/python3");
+        as_argument.args(["-I", "-c", sleeping, &entry]).env_clear();
+        let mut as_argument = spawn(as_argument);
+        let mut unjailed = std::process::Command::new("/usr/bin/python3");
+        unjailed
+            .args(["-I", "-c", sleeping])
+            .env_clear()
+            .env(JAIL_MARK_ENV, &mark);
+        let mut unjailed = spawn(unjailed);
+        let mut jailed = jailed_python();
+        jailed
+            .args(["-I", "-c", sleeping])
+            .env_clear()
+            .env(JAIL_MARK_ENV, &mark);
+        let mut jailed = spawn(jailed);
+        let mut guard = LoopGuard::new(in_pwd.id(), &mark);
+        for child in [&as_argument, &unjailed, &jailed] {
+            guard.session(child.id());
+        }
+        let outside = [in_pwd.id(), as_argument.id(), unjailed.id()];
+        // Until each interpreter runs (the shim's environment is hidden).
+        let needle = mark_needle(&mark);
+        for _ in 0..60 {
+            if environment_carries(unjailed.id(), &needle)
+                && environment_carries(jailed.id(), &needle)
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(environment_carries(jailed.id(), &needle));
+        assert!(environment_carries(unjailed.id(), &needle));
+        assert!(!environment_carries(in_pwd.id(), &needle));
+        assert!(!environment_carries(as_argument.id(), &needle));
+        let doomed = gather(999_998, &mark);
+        super::super::jail_reaper_gate::note_only_here(true);
+        reap_mark(&mark);
+        super::super::jail_reaper_gate::note_only_here(false);
+        let attempts = super::super::jail_reaper_gate::attempts();
+        use super::super::jail_reaper_gate::Target;
+        let aimed: Vec<_> = attempts
+            .iter()
+            .filter(|attempt| {
+                outside.iter().any(|pid| {
+                    attempt.target == Target::Process(*pid) || attempt.target == Target::Group(*pid)
+                })
+            })
+            .collect();
+        let jailed_hit = attempts
+            .iter()
+            .any(|attempt| attempt.target == Target::Process(jailed.id()) && attempt.sent);
+        for child in [&mut in_pwd, &mut as_argument, &mut unjailed, &mut jailed] {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        assert!(
+            outside.iter().all(|pid| !doomed.contains(pid)),
+            "gathered a process outside the jail: {doomed:?} {outside:?}"
+        );
+        assert!(
+            aimed.is_empty(),
+            "aimed at a process outside the jail: {aimed:?}"
+        );
+        assert!(jailed_hit, "the jailed carrier was not stopped");
+    }
+
     /// Kills a looping test process for good, whatever the test's outcome:
     /// its sessions (the loop's group and session never change) and what
     /// carries its mark are frozen and killed until, several passes in a
@@ -1518,7 +1734,7 @@ mod tests {
                     let session = unsafe { libc::getsid(pid as libc::pid_t) };
                     if seen.status != SZOMB
                         && (self.sessions.contains(&session)
-                            || environment_holds(pid, &self.needle))
+                            || environment_carries(pid, &self.needle))
                     {
                         running = true;
                         if self.sessions.contains(&session) {

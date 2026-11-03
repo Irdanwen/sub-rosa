@@ -21,6 +21,8 @@
 
 use std::path::Path;
 
+use crate::domain::types::AppError;
+
 /// The ceiling on what one verdict reads. A refactor across two hundred files
 /// would otherwise blow the context of every seat at once and fail the whole
 /// verdict rather than most of it.
@@ -56,6 +58,10 @@ pub struct Evidence {
     /// read half the work will report on half the work as though it were all
     /// of it.
     pub truncated: bool,
+    /// What the person must read about how the evidence was gathered: git
+    /// refused on this folder (ADR-0140). The English literal of the
+    /// refusal, which the interface translates.
+    pub notice: Option<String>,
 }
 
 impl Evidence {
@@ -64,6 +70,7 @@ impl Evidence {
             text: String::new(),
             kind,
             truncated: false,
+            notice: None,
         }
     }
 }
@@ -99,6 +106,7 @@ pub fn from_reply(reply: &str) -> Evidence {
         text: format!("<agent_reply>\n{body}\n</agent_reply>"),
         kind: "reply",
         truncated,
+        notice: None,
     }
 }
 
@@ -108,17 +116,22 @@ pub async fn gather(working_dir: &str, base_commit: Option<&str>, since_rfc3339:
     if !path.is_dir() {
         return Evidence::empty("missing");
     }
-    if is_repo(working_dir).await {
-        return from_git(working_dir, base_commit).await;
+    match git(working_dir, &["rev-parse", "--is-inside-work-tree"]).await {
+        Ok(out) if out.trim() == "true" => from_git(working_dir, base_commit).await,
+        // Git refused on this folder (a program its configuration names, a
+        // time limit): said to the person and to the seats, never a silent
+        // fall back to the files' dates.
+        Err(error) if error.code == "git_unsafe_folder" || error.code == "git_timed_out" => {
+            let mut evidence = from_mtime(path, since_rfc3339).await;
+            evidence.text = format!(
+                "<git_refused>\n{}\nWhat follows is the files changed since the work began, not git's view.\n</git_refused>\n\n{}",
+                error.message, evidence.text
+            );
+            evidence.notice = Some(error.message);
+            evidence
+        }
+        _ => from_mtime(path, since_rfc3339).await,
     }
-    from_mtime(path, since_rfc3339).await
-}
-
-async fn is_repo(working_dir: &str) -> bool {
-    git(working_dir, &["rev-parse", "--is-inside-work-tree"])
-        .await
-        .map(|out| out.trim() == "true")
-        .unwrap_or(false)
 }
 
 async fn from_git(working_dir: &str, base_commit: Option<&str>) -> Evidence {
@@ -128,7 +141,7 @@ async fn from_git(working_dir: &str, base_commit: Option<&str>) -> Evidence {
         .filter(|value| !value.is_empty())
         .unwrap_or("HEAD");
 
-    if let Some(stat) = git(
+    if let Ok(stat) = git(
         working_dir,
         &["diff", "--no-ext-diff", "--no-textconv", "--stat", base],
     )
@@ -140,7 +153,7 @@ async fn from_git(working_dir: &str, base_commit: Option<&str>) -> Evidence {
             out.push_str("\n</changed_files>\n\n");
         }
     }
-    if let Some(diff) = git(
+    if let Ok(diff) = git(
         working_dir,
         &["diff", "--no-ext-diff", "--no-textconv", base],
     )
@@ -155,7 +168,7 @@ async fn from_git(working_dir: &str, base_commit: Option<&str>) -> Evidence {
 
     // Files git has never heard of. `git diff` is blind to them, and the new
     // file is often the deliverable itself.
-    if let Some(status) = git(working_dir, &["status", "--porcelain"]).await {
+    if let Ok(status) = git(working_dir, &["status", "--porcelain"]).await {
         let new_files: Vec<&str> = status
             .lines()
             .filter_map(|line| line.strip_prefix("?? "))
@@ -172,7 +185,7 @@ async fn from_git(working_dir: &str, base_commit: Option<&str>) -> Evidence {
                     ));
                     break;
                 }
-                out.push_str(&render_file(Path::new(working_dir).join(relative), relative).await);
+                out.push_str(&render_file(Path::new(working_dir), relative).await);
             }
             out.push_str("</new_files>\n\n");
         }
@@ -206,6 +219,11 @@ async fn from_mtime(root: &Path, since_rfc3339: &str) -> Evidence {
             let Ok(kind) = entry.file_type().await else {
                 continue;
             };
+            // A link is neither walked nor read: it may point at what the
+            // jail cannot read (ADR-0140).
+            if kind.is_symlink() {
+                continue;
+            }
             if kind.is_dir() {
                 stack.push(path);
                 continue;
@@ -251,7 +269,7 @@ async fn from_mtime(root: &Path, since_rfc3339: &str) -> Evidence {
         );
     }
     out.push_str("</touched_files>\n\n");
-    for (index, (path, relative)) in touched.iter().enumerate() {
+    for (index, (_, relative)) in touched.iter().enumerate() {
         if index >= MAX_NEW_FILES {
             out.push_str(&format!(
                 "... and {} more touched paths, not read\n",
@@ -259,24 +277,54 @@ async fn from_mtime(root: &Path, since_rfc3339: &str) -> Evidence {
             ));
             break;
         }
-        out.push_str(&render_file(path.clone(), relative).await);
+        out.push_str(&render_file(root, relative).await);
     }
     finish(out, "mtime")
 }
 
-async fn render_file(path: std::path::PathBuf, relative: &str) -> String {
-    match tokio::fs::read_to_string(&path).await {
-        Ok(contents) => {
-            let capped: String = contents.chars().take(FILE_MAX_CHARS).collect();
-            let elided = contents.chars().count() > FILE_MAX_CHARS;
+/// A file of the working folder as the seats read it. Read without
+/// following a link, a regular file only, at most a bound (ADR-0140): the
+/// jail writes this folder, and a link there may point at what the jail
+/// itself cannot read.
+async fn render_file(root: &Path, relative: &str) -> String {
+    let root = root.to_path_buf();
+    let name = relative.to_string();
+    let read = tokio::task::spawn_blocking(move || {
+        crate::confined_read::read_prefix_beneath(
+            &root,
+            Path::new(&name),
+            (FILE_MAX_CHARS * 4) as u64,
+        )
+    })
+    .await;
+    match read {
+        Ok(Ok((bytes, more))) => {
+            // A cut may fall inside a character: keep what decodes.
+            let text = match std::str::from_utf8(&bytes) {
+                Ok(text) => text,
+                Err(error) if error.error_len().is_none() => {
+                    std::str::from_utf8(&bytes[..error.valid_up_to()]).unwrap_or_default()
+                }
+                Err(_) => {
+                    return format!("<file path=\"{relative}\">(not readable as text)</file>\n")
+                }
+            };
+            let capped: String = text.chars().take(FILE_MAX_CHARS).collect();
+            let elided = more || text.chars().count() > FILE_MAX_CHARS;
             format!(
                 "<file path=\"{relative}\">\n{capped}{}\n</file>\n",
                 if elided { "\n... (file truncated)" } else { "" }
             )
         }
+        Ok(Err(crate::confined_read::Refused::Link)) => {
+            format!("<file path=\"{relative}\">(a link, not followed)</file>\n")
+        }
+        Ok(Err(crate::confined_read::Refused::NotAFile)) => {
+            format!("<file path=\"{relative}\">(not a regular file)</file>\n")
+        }
         // Binary, unreadable, or gone again. Naming it is still evidence: a
         // deliverable that is a binary is a fact the reviewer needs.
-        Err(_) => format!("<file path=\"{relative}\">(not readable as text)</file>\n"),
+        _ => format!("<file path=\"{relative}\">(not readable as text)</file>\n"),
     }
 }
 
@@ -290,31 +338,35 @@ fn finish(mut text: String, kind: &'static str) -> Evidence {
         text,
         kind,
         truncated,
+        notice: None,
     }
 }
 
-/// Run git in a folder. `None` on any failure, which the callers read as "this
-/// path is not available" rather than as an error worth failing a verdict over.
+/// Run git in a folder. An error on any failure, which most callers read as
+/// "this path is not available" rather than as an error worth failing a
+/// verdict over; a refusal (ADR-0140) is said, by `gather`.
 ///
-/// Git runs with its configuration neutralized and under a read-only jail
-/// (ADR-0140): the working folder is written by the sandboxed session, and
-/// a command it planted in `.git/config` would otherwise run here.
-async fn git(working_dir: &str, args: &[&str]) -> Option<String> {
-    let output = crate::hermes_bridge::jailed_git::tokio_command(Path::new(working_dir))
-        .ok()?
-        .args(args)
-        .output()
-        .await
-        .ok()?;
+/// Git runs with its configuration neutralized, checked and under a
+/// read-only jail, within a time limit, off the async runtime (ADR-0140):
+/// the working folder is written by the sandboxed session.
+async fn git(working_dir: &str, args: &[&str]) -> Result<String, AppError> {
+    let output = crate::hermes_bridge::jailed_git::run_async(
+        std::path::PathBuf::from(working_dir),
+        args.iter().map(|arg| arg.to_string()).collect(),
+    )
+    .await?;
     if !output.status.success() {
-        return None;
+        return Err(AppError::new(
+            "git_failed",
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
     }
-    Some(String::from_utf8_lossy(&output.stdout).to_string())
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 /// The working folder's HEAD, recorded when the agent takes a mandate.
 pub async fn head_commit(working_dir: &str) -> Option<String> {
-    let head = git(working_dir, &["rev-parse", "HEAD"]).await?;
+    let head = git(working_dir, &["rev-parse", "HEAD"]).await.ok()?;
     let head = head.trim().to_string();
     if head.is_empty() {
         return None;
@@ -467,5 +519,65 @@ mod planted_tests {
         let evidence = super::from_git(&planted.repo.to_string_lossy(), None).await;
         planted.assert_untouched(&[evidence.text.clone().into_bytes()]);
         assert!(!evidence.text.contains("a.txt"), "{}", evidence.text);
+    }
+
+    fn secret_beside(dir: &std::path::Path) -> std::path::PathBuf {
+        let secret = dir.join("outside-secret.txt");
+        std::fs::write(&secret, "AUDIT-SECRET-OUTSIDE-THE-FOLDER").unwrap();
+        secret
+    }
+
+    /// ADR-0140 (audit D1): a link the jail planted in its working folder,
+    /// to a file outside it, is never read, in git mode (`?? leak.md`).
+    #[tokio::test]
+    async fn a_link_planted_in_a_repository_is_never_read() {
+        let planted = planted_repository(Plant::Neutralized);
+        let secret = secret_beside(planted.dir.path());
+        std::os::unix::fs::symlink(&secret, planted.repo.join("leak.md")).unwrap();
+        let evidence = super::gather(
+            &planted.repo.to_string_lossy(),
+            None,
+            "2020-01-01T00:00:00Z",
+        )
+        .await;
+        assert_eq!(evidence.kind, "git");
+        assert!(evidence.text.contains("leak.md"), "{}", evidence.text);
+        assert!(
+            !evidence.text.contains("AUDIT-SECRET-OUTSIDE-THE-FOLDER"),
+            "the council followed the link: {}",
+            evidence.text
+        );
+    }
+
+    /// The same in the dates mode (a folder without a repository).
+    #[tokio::test]
+    async fn a_link_planted_in_a_plain_folder_is_never_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let secret = secret_beside(dir.path());
+        let folder = dir.path().join("folder");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("note.md"), "inside").unwrap();
+        std::os::unix::fs::symlink(&secret, folder.join("leak.md")).unwrap();
+        let evidence = super::gather(&folder.to_string_lossy(), None, "2020-01-01T00:00:00Z").await;
+        assert_eq!(evidence.kind, "mtime");
+        assert!(evidence.text.contains("inside"), "{}", evidence.text);
+        assert!(!evidence.text.contains("AUDIT-SECRET-OUTSIDE-THE-FOLDER"));
+    }
+
+    /// ADR-0140 (audit D6): git refused on a folder is said, to the seats
+    /// and to the person (the verdict's notice), never a silent fall back.
+    #[tokio::test]
+    async fn a_refused_folder_is_said() {
+        let planted = planted_repository(Plant::Programs);
+        let evidence = super::gather(
+            &planted.repo.to_string_lossy(),
+            None,
+            "2020-01-01T00:00:00Z",
+        )
+        .await;
+        planted.assert_untouched(&[evidence.text.clone().into_bytes()]);
+        let notice = evidence.notice.expect("no notice");
+        assert!(notice.contains("does not run git"), "{notice}");
+        assert!(evidence.text.contains("<git_refused>"), "{}", evidence.text);
     }
 }

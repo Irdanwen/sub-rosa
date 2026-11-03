@@ -5298,6 +5298,7 @@ fn council_verdict_from_row(row: sqlx_sqlite::SqliteRow) -> CouncilVerdictDto {
         criteria: body.criteria,
         findings: body.findings,
         summary: body.summary,
+        notice: body.notice,
         prompt_version: row.get("prompt_version"),
         last_error: row.get("last_error"),
         created_at: row.get("created_at"),

@@ -296,6 +296,7 @@ async fn each_round_keeps_its_own_verdict() {
                 seat: "collateral".into(),
             }],
             summary: Some(format!("round {round}")),
+            notice: None,
         };
         repos
             .set_council_verdict_ready("m1", round, &serde_json::to_string(&body).unwrap())

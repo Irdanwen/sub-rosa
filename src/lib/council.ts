@@ -120,6 +120,10 @@ export type CouncilVerdict = {
   findings: VerdictFinding[];
   /** The chair's short reading. Never a score. */
   summary?: string | null;
+  /** How the evidence was gathered, when the person must know it (git
+   * refused on the folder): an English sentence from the app, translated
+   * here. */
+  notice?: string | null;
   promptVersion: string;
   lastError?: string | null;
   createdAt: string;

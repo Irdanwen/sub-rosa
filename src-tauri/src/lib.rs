@@ -34,6 +34,7 @@ pub mod child_env;
 #[cfg(desktop)]
 pub mod code_review;
 pub mod commands;
+pub mod confined_read;
 pub mod connectors;
 pub mod conversation_export;
 #[cfg(desktop)]

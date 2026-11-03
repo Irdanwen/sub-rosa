@@ -1662,6 +1662,11 @@ pub struct CouncilVerdictDto {
     /// The chair's short reading. Never a score: a number would invite tuning
     /// the number.
     pub summary: Option<String>,
+    /// What the person must read about how the evidence was gathered (git
+    /// refused on the folder, ADR-0140): an English sentence the interface
+    /// translates. Not a model's words.
+    #[serde(default)]
+    pub notice: Option<String>,
     /// The prompts that produced this verdict, not the ones that produced the
     /// mandate: a retake can land after an app update.
     pub prompt_version: String,
@@ -1682,4 +1687,6 @@ pub struct CouncilVerdictBody {
     pub findings: Vec<VerdictFindingDto>,
     #[serde(default)]
     pub summary: Option<String>,
+    #[serde(default)]
+    pub notice: Option<String>,
 }

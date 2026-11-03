@@ -155,7 +155,7 @@ pub(super) fn start(store: &Path, folder: &Path) -> Result<Review, AppError> {
         stop(store)?;
     }
     let git = Git { folder };
-    let (base, names) = match git.head() {
+    let (base, names) = match git.head()? {
         Some(head) => {
             let names = git.changed_since(&head)?;
             (Base::Git { head }, names)

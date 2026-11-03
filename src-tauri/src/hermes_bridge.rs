@@ -2862,7 +2862,7 @@ pub async fn download_hermes_bridge_file(
     fs::create_dir_all(&downloads_dir)
         .map_err(|error| AppError::new("hermes_file_download_failed", error.to_string()))?;
     let destination = unique_download_path(&downloads_dir, &requested)?;
-    fs::copy(&requested, &destination)
+    crate::confined_read::copy_resolved(&requested, &destination)
         .map_err(|error| AppError::new("hermes_file_download_failed", error.to_string()))?;
     Ok(destination.to_string_lossy().into_owned())
 }
@@ -2913,7 +2913,7 @@ pub async fn save_hermes_bridge_file(
         fs::create_dir_all(parent)
             .map_err(|error| AppError::new("hermes_file_save_failed", error.to_string()))?;
     }
-    fs::copy(&requested, &destination)
+    crate::confined_read::copy_resolved(&requested, &destination)
         .map_err(|error| AppError::new("hermes_file_save_failed", error.to_string()))?;
     Ok(Some(destination.to_string_lossy().into_owned()))
 }
@@ -3040,15 +3040,17 @@ pub async fn hermes_bridge_image_for_model(
     let Some(mime_type) = image_mime_type(&requested) else {
         return Ok(None);
     };
-    let metadata = fs::metadata(&requested)
-        .map_err(|error| AppError::new("hermes_file_preview_failed", error.to_string()))?;
-    // The import cap already bounds what can reach the workspace; this guards
-    // the decode buffer against a file that slipped in by another route.
-    if metadata.len() > HERMES_IMAGE_ATTACH_MAX_SOURCE_BYTES {
+    // Bounded (the decode buffer), and again from `/` without following a
+    // link put in since the check: this goes to the model (ADR-0140).
+    let read = crate::confined_read::read_resolved_within(
+        &requested,
+        HERMES_IMAGE_ATTACH_MAX_SOURCE_BYTES,
+    );
+    let Some(bytes) =
+        read.map_err(|e| AppError::new("hermes_file_preview_failed", e.to_string()))?
+    else {
         return Ok(None);
-    }
-    let bytes = fs::read(&requested)
-        .map_err(|error| AppError::new("hermes_file_preview_failed", error.to_string()))?;
+    };
     let budget = request
         .max_bytes
         .unwrap_or(HERMES_IMAGE_ATTACH_DEFAULT_BUDGET_BYTES)
@@ -3368,32 +3370,24 @@ fn unique_upload_path(upload_dir: &Path, source: &Path) -> Result<PathBuf, AppEr
 /// the cap detects oversize), not a stat-then-read, so a file still being
 /// written by an agent can't grow past the limit between check and read.
 fn text_preview(path: &Path) -> Result<Option<String>, AppError> {
-    use std::io::Read;
-
-    let file = fs::File::open(path)
-        .map_err(|error| AppError::new("hermes_file_text_failed", error.to_string()))?;
-    let mut bytes = Vec::new();
-    let read = file
-        .take(HERMES_TEXT_PREVIEW_MAX_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| AppError::new("hermes_file_text_failed", error.to_string()))?;
-    if read as u64 > HERMES_TEXT_PREVIEW_MAX_BYTES {
-        return Ok(None);
+    // Again from `/` without following a link put in since the check.
+    match crate::confined_read::read_resolved(path, HERMES_TEXT_PREVIEW_MAX_BYTES) {
+        Ok(bytes) => Ok(String::from_utf8(bytes).ok()),
+        Err(crate::confined_read::Refused::TooLarge) => Ok(None),
+        Err(error) => Err(AppError::new("hermes_file_text_failed", error.to_string())),
     }
-    Ok(String::from_utf8(bytes).ok())
 }
 
 fn image_preview_data_url(path: &Path) -> Result<Option<String>, AppError> {
     let Some(mime_type) = image_mime_type(path) else {
         return Ok(None);
     };
-    let metadata = fs::metadata(path)
-        .map_err(|error| AppError::new("hermes_file_preview_failed", error.to_string()))?;
-    if metadata.len() > HERMES_IMAGE_PREVIEW_MAX_BYTES {
+    let read = crate::confined_read::read_resolved_within(path, HERMES_IMAGE_PREVIEW_MAX_BYTES);
+    let Some(bytes) =
+        read.map_err(|e| AppError::new("hermes_file_preview_failed", e.to_string()))?
+    else {
         return Ok(None);
-    }
-    let bytes = fs::read(path)
-        .map_err(|error| AppError::new("hermes_file_preview_failed", error.to_string()))?;
+    };
     Ok(Some(format!(
         "data:{mime_type};base64,{}",
         BASE64_STANDARD.encode(bytes)

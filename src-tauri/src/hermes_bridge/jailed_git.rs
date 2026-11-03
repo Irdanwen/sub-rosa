@@ -41,7 +41,7 @@
 //! file's past content with `cat-file blob`, never through filters.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 
 use crate::domain::types::AppError;
 
@@ -68,10 +68,25 @@ pub(crate) struct Sandbox {
     profile: String,
 }
 
-/// A `git` command on `folder`, with every layer. Fails closed: where the
-/// jail engages and git cannot be confined, or where the folder's
-/// configuration defines a program git would run, no git runs.
-pub(crate) fn command(folder: &Path) -> Result<Command, AppError> {
+/// How long any git the app runs may take. A folder the jail writes can
+/// make git wait for ever (a named pipe included by `.git/config`,
+/// measured): past this, git and what it started are stopped.
+pub(crate) const GIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Runs git `args` on `folder` with every layer, within `GIT_TIMEOUT`.
+/// Fails closed: where the jail engages and git cannot be confined, or
+/// where the folder's configuration names a program or a working tree
+/// elsewhere, no git runs.
+pub(crate) fn run(folder: &Path, args: &[&str]) -> Result<Output, AppError> {
+    run_within(folder, args, GIT_TIMEOUT)
+}
+
+/// The same, within `timeout`.
+pub(crate) fn run_within(
+    folder: &Path,
+    args: &[&str],
+    timeout: std::time::Duration,
+) -> Result<Output, AppError> {
     let sandbox = if super::sandbox_profile::jail_engages() {
         Some(sandbox_for(folder).map_err(|error| {
             AppError::new(
@@ -82,13 +97,113 @@ pub(crate) fn command(folder: &Path) -> Result<Command, AppError> {
     } else {
         None
     };
-    refuse_planted_programs(folder, sandbox.as_ref())?;
-    Ok(build(folder, sandbox.as_ref(), true))
+    refuse_planted_programs(folder, sandbox.as_ref(), timeout)?;
+    #[cfg(test)]
+    AFTER_THE_CHECK.with(|hook| hook.take().map(|hook| hook()));
+    let mut cmd = build(folder, sandbox.as_ref(), true);
+    cmd.args(confined_args(args));
+    output_within(cmd, timeout)
 }
 
-/// The same, for async callers.
-pub(crate) fn tokio_command(folder: &Path) -> Result<tokio::process::Command, AppError> {
-    command(folder).map(tokio::process::Command::from)
+// Tests only: what happens between the check and the command (the jail
+// writing the folder meanwhile).
+#[cfg(test)]
+thread_local! {
+    static AFTER_THE_CHECK: std::cell::Cell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// For async callers: the check and git itself run off the async runtime
+/// (on a blocking thread), never on one of its threads.
+pub(crate) async fn run_async(folder: PathBuf, args: Vec<String>) -> Result<Output, AppError> {
+    run_async_within(folder, args, GIT_TIMEOUT).await
+}
+
+/// The same, within `timeout`.
+pub(crate) async fn run_async_within(
+    folder: PathBuf,
+    args: Vec<String>,
+    timeout: std::time::Duration,
+) -> Result<Output, AppError> {
+    tokio::task::spawn_blocking(move || {
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        run_within(&folder, &args, timeout)
+    })
+    .await
+    .map_err(|error| AppError::new("git_unavailable", error.to_string()))?
+}
+
+/// The arguments as git gets them: `status` and `diff` never go into a
+/// submodule, whose configuration and attributes the check has not read
+/// (measured: only the command-line option holds; the same setting in the
+/// command's configuration loses to a `submodule.<name>.ignore` the folder
+/// sets).
+pub(crate) fn confined_args<'a>(args: &[&'a str]) -> Vec<&'a str> {
+    let mut out = args.to_vec();
+    if matches!(args.first(), Some(&"status") | Some(&"diff")) {
+        out.insert(1, "--ignore-submodules=all");
+    }
+    out
+}
+
+/// Runs `cmd` and collects its output, within `timeout`; past it, git's
+/// whole process group is killed (git starts its helpers in it).
+fn output_within(mut cmd: Command, timeout: std::time::Duration) -> Result<Output, AppError> {
+    use std::io::Read as _;
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd
+        .spawn()
+        .map_err(|error| AppError::new("git_unavailable", error.to_string()))?;
+    let drain = |pipe: Option<Box<dyn std::io::Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut bytes);
+            }
+            bytes
+        })
+    };
+    let stdout = drain(
+        child
+            .stdout
+            .take()
+            .map(|pipe| Box::new(pipe) as Box<dyn std::io::Read + Send>),
+    );
+    let stderr = drain(
+        child
+            .stderr
+            .take()
+            .map(|pipe| Box::new(pipe) as Box<dyn std::io::Read + Send>),
+    );
+    let deadline = std::time::Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {}
+            Err(error) => return Err(AppError::new("git_unavailable", error.to_string())),
+        }
+        if std::time::Instant::now() >= deadline {
+            #[cfg(unix)]
+            super::jail_reaper_gate::killpg(child.id(), libc::SIGKILL);
+            #[cfg(not(unix))]
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(AppError::new(
+                "git_timed_out",
+                "Git took too long on this folder and was stopped.",
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    Ok(Output {
+        status,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
+    })
 }
 
 /// Builds the command: under `sandbox` when given, with the neutral
@@ -122,6 +237,14 @@ pub(crate) fn build(folder: &Path, sandbox: Option<&Sandbox>, neutral: bool) -> 
         cmd.env("TMPDIR", tmp);
     }
     if neutral {
+        // The working tree is the one the app found, never one the folder's
+        // configuration names (which would have git look at files
+        // elsewhere). Measured: only `GIT_WORK_TREE` (or `--work-tree`)
+        // outranks a `core.worktree` the folder sets; the same key in the
+        // command's configuration does not.
+        if let Some(found) = places(folder) {
+            cmd.env("GIT_WORK_TREE", found.tree);
+        }
         cmd.env("GIT_ATTR_SOURCE", EMPTY_TREE)
             .env("GIT_CONFIG_COUNT", NEUTRAL_CONFIG.len().to_string());
         for (index, (key, value)) in NEUTRAL_CONFIG.iter().enumerate() {
@@ -152,37 +275,44 @@ pub(crate) fn names_a_program(key: &str) -> bool {
 }
 
 /// Lists the configuration git would read in `folder` (includes followed),
-/// and refuses the folder when it defines a program (`names_a_program`).
-/// A folder git cannot read the configuration of is left to the command
-/// itself, which fails the same way.
+/// and refuses the folder when it defines a program (`names_a_program`) or
+/// names a working tree other than the one the app found. A folder git
+/// cannot read the configuration of is left to the command itself, which
+/// fails the same way.
 pub(crate) fn refuse_planted_programs(
     folder: &Path,
     sandbox: Option<&Sandbox>,
+    timeout: std::time::Duration,
 ) -> Result<(), AppError> {
-    let output = build(folder, sandbox, true)
-        .args(["config", "--list", "-z"])
-        .stdin(std::process::Stdio::null())
-        .output()
-        .map_err(|error| AppError::new("git_unavailable", error.to_string()))?;
+    let mut cmd = build(folder, sandbox, true);
+    cmd.args(["config", "--list", "-z"]);
+    let output = output_within(cmd, timeout)?;
     if !output.status.success() {
         return Ok(());
     }
+    let tree = places(folder).map(|found| found.tree);
     for entry in output.stdout.split(|byte| *byte == 0) {
-        let key = entry
-            .split(|byte| *byte == b'\n')
-            .next()
-            .unwrap_or_default();
-        let key = String::from_utf8_lossy(key);
-        if names_a_program(&key) {
+        let mut lines = entry.splitn(2, |byte| *byte == b'\n');
+        let key = String::from_utf8_lossy(lines.next().unwrap_or_default());
+        let value = String::from_utf8_lossy(lines.next().unwrap_or_default());
+        let elsewhere = key.eq_ignore_ascii_case("core.worktree")
+            && tree
+                .as_deref()
+                .map_or(true, |tree| !same_folder(tree, Path::new(value.as_ref())));
+        if names_a_program(&key) || elsewhere {
+            eprintln!("git: refused {} ({key})", folder.display());
             return Err(AppError::new(
                 "git_unsafe_folder",
-                format!(
-                    "This folder's git configuration defines a program git would run ({key}); Sub Rosa does not run git on it."
-                ),
+                "This folder's git configuration names a program git would run, or a working tree elsewhere, so Sub Rosa does not run git on it.",
             ));
         }
     }
     Ok(())
+}
+
+/// Whether `named` (as the configuration wrote it) is the folder `tree`.
+fn same_folder(tree: &Path, named: &Path) -> bool {
+    std::fs::canonicalize(named).is_ok_and(|named| named == tree)
 }
 
 /// The temp folder git may write (its own, under the app's).
@@ -240,46 +370,41 @@ fn git_install() -> Option<&'static GitInstall> {
 /// The places of a repository git reads: its working tree, and its store
 /// when that lives elsewhere (a linked worktree's, under the main store's
 /// `worktrees/`).
-#[cfg(target_os = "macos")]
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Places {
     pub(crate) tree: PathBuf,
     pub(crate) stores: Vec<PathBuf>,
 }
 
-/// Finds the repository `folder` is in, as git would, without running git.
-/// A `.git` file the jail wrote could point anywhere: a store outside the
-/// working tree is taken only when it is a linked worktree's
-/// (`<store>/worktrees/<name>`, the store holding `HEAD` and `objects`).
-#[cfg(target_os = "macos")]
-pub(crate) fn places(folder: &Path) -> Places {
-    let folder = std::fs::canonicalize(folder).unwrap_or_else(|_| folder.to_path_buf());
+/// Finds the repository `folder` is in, as git would, without running git;
+/// `None` outside any. A `.git` file the jail wrote could point anywhere: a
+/// store outside the working tree is taken only when it is a linked
+/// worktree's (`<store>/worktrees/<name>`, the store holding `HEAD` and
+/// `objects`).
+pub(crate) fn places(folder: &Path) -> Option<Places> {
+    let folder = std::fs::canonicalize(folder).ok()?;
     for dir in folder.ancestors() {
         let dot_git = dir.join(".git");
         let Ok(meta) = dot_git.symlink_metadata() else {
             continue;
         };
         if meta.is_dir() {
-            return Places {
+            return Some(Places {
                 tree: dir.to_path_buf(),
                 stores: Vec::new(),
-            };
+            });
         }
         if meta.is_file() {
             let stores = linked_store(dir, &dot_git).unwrap_or_default();
-            return Places {
+            return Some(Places {
                 tree: dir.to_path_buf(),
                 stores,
-            };
+            });
         }
     }
-    Places {
-        tree: folder,
-        stores: Vec::new(),
-    }
+    None
 }
 
-#[cfg(target_os = "macos")]
 fn linked_store(tree: &Path, dot_git: &Path) -> Option<Vec<PathBuf>> {
     let text = std::fs::read_to_string(dot_git).ok()?;
     let target = text.lines().next()?.strip_prefix("gitdir: ")?.trim();
@@ -300,10 +425,17 @@ fn linked_store(tree: &Path, dot_git: &Path) -> Option<Vec<PathBuf>> {
 pub(crate) fn sandbox_for(folder: &Path) -> std::io::Result<Sandbox> {
     let install = git_install().ok_or_else(|| std::io::Error::other("no git installation"))?;
     let tmp = git_tmp().ok_or_else(|| std::io::Error::other("no temp folder for git"))?;
-    let places = places(folder);
+    // Outside any repository, git reads the folder alone.
+    let places = places(folder).unwrap_or_else(|| Places {
+        tree: std::fs::canonicalize(folder).unwrap_or_else(|_| folder.to_path_buf()),
+        stores: Vec::new(),
+    });
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| std::io::Error::other("no home"))?;
     Ok(Sandbox {
         git: install.git.clone(),
-        profile: render_profile(install, &places, &tmp),
+        profile: render_profile(install, &places, &tmp, &home),
     })
 }
 
@@ -316,9 +448,10 @@ pub(crate) fn sandbox_for(_folder: &Path) -> std::io::Result<Sandbox> {
 /// the system's libraries and a few of its services, no network but the
 /// system log); runs only git and its helpers; reads git's installation,
 /// the repository and `tmp`; writes only `tmp`; looks up what a path is
-/// anywhere (git finds its repository by its parents), never its content.
+/// anywhere (git finds its repository by its parents), never its content,
+/// and not even that in the credential stores the jail cannot see.
 #[cfg(target_os = "macos")]
-fn render_profile(install: &GitInstall, places: &Places, tmp: &Path) -> String {
+fn render_profile(install: &GitInstall, places: &Places, tmp: &Path, home: &Path) -> String {
     use super::sandbox_profile::sbpl_quote;
     let quote = |path: &Path| sbpl_quote(&path.to_string_lossy());
     let mut out = String::new();
@@ -337,6 +470,9 @@ fn render_profile(install: &GitInstall, places: &Places, tmp: &Path) -> String {
     }
     out.push_str(&format!("  (subpath {}))\n", quote(tmp)));
     out.push_str(&format!("(allow file-write* (subpath {}))\n", quote(tmp)));
+    out.push_str("(deny file-read*\n");
+    super::sandbox_profile::push_secret_stores(&mut out, home);
+    out.push_str(")\n");
     out
 }
 
@@ -393,6 +529,15 @@ pub(crate) mod planted {
                 }
                 Err(_) => false,
             }
+        }
+
+        /// Forgets what ran so far (setting the repository up, a control):
+        /// its marks and its calls.
+        pub(crate) fn forget_marks(&self) {
+            for entry in std::fs::read_dir(&self.marks).unwrap().flatten() {
+                let _ = std::fs::remove_file(entry.path());
+            }
+            while self.listener.accept().is_ok() {}
         }
 
         /// Nothing ran, nothing read outside, nothing called.
@@ -591,12 +736,12 @@ mod tests {
     fn a_folder_whose_configuration_defines_a_program_is_refused() {
         for plant in [Plant::ProgramsInTheTree, Plant::Programs] {
             let planted = planted_repository(plant);
-            let refused = refuse_planted_programs(&planted.repo, None);
+            let refused = refuse_planted_programs(&planted.repo, None, GIT_TIMEOUT);
             assert!(refused.is_err(), "a defined program was not refused");
             planted.assert_untouched(&[]);
         }
         let neutralized = planted_repository(Plant::Neutralized);
-        assert!(refuse_planted_programs(&neutralized.repo, None).is_ok());
+        assert!(refuse_planted_programs(&neutralized.repo, None, GIT_TIMEOUT).is_ok());
     }
 
     #[test]
@@ -656,27 +801,37 @@ mod tests {
             vec!["add", "-A"],
             vec!["write-tree"],
         ];
-        let commands: Vec<Command> = reads
-            .iter()
-            .map(|args| {
-                let mut cmd = command(&planted.repo).unwrap();
-                cmd.args(args);
-                cmd
-            })
-            .collect();
-        planted.plant(Plant::Programs);
+        let planted = std::rc::Rc::new(planted);
         let mut outputs = Vec::new();
-        for mut cmd in commands {
-            let output = cmd.output().unwrap();
-            outputs.push(output.stdout);
-            outputs.push(output.stderr);
+        for (index, args) in reads.iter().enumerate() {
+            if index == 0 {
+                // The check passes, then the jail plants the programs.
+                let later = planted.clone();
+                AFTER_THE_CHECK
+                    .with(|hook| hook.set(Some(Box::new(move || later.plant(Plant::Programs)))));
+            }
+            // Later commands meet the planted programs at the check: a
+            // refusal is fine, it ran nothing.
+            match run(&planted.repo, args) {
+                Ok(output) => {
+                    outputs.push(output.stdout);
+                    outputs.push(output.stderr);
+                }
+                Err(error) => {
+                    assert_eq!(error.code, "git_unsafe_folder", "{error:?}");
+                    outputs.push(Vec::new());
+                    outputs.push(Vec::new());
+                }
+            }
         }
         planted.assert_untouched(&outputs);
-        // And git ran (the status, second): nothing is proven otherwise.
+        // And git ran (the diff, first, after the check): nothing is
+        // proven otherwise.
         assert!(
-            String::from_utf8_lossy(&outputs[2]).contains("a.txt"),
+            String::from_utf8_lossy(&outputs[0]).contains("a.txt")
+                || String::from_utf8_lossy(&outputs[1]).contains("a.txt"),
             "git did not run: {}",
-            String::from_utf8_lossy(&outputs[3])
+            String::from_utf8_lossy(&outputs[1])
         );
     }
 
@@ -707,11 +862,7 @@ mod tests {
     #[test]
     fn git_still_reads_the_folder() {
         let planted = planted_repository(Plant::Neutralized);
-        let out = command(&planted.repo)
-            .unwrap()
-            .args(["status", "--porcelain"])
-            .output()
-            .unwrap();
+        let out = run(&planted.repo, &["status", "--porcelain"]).unwrap();
         let said = String::from_utf8_lossy(&out.stdout);
         assert!(said.contains("a.txt") && said.contains("new.txt"), "{said}");
     }
@@ -732,20 +883,220 @@ mod tests {
             .status()
             .unwrap();
         assert!(status.success());
-        let found = places(&linked);
+        let found = places(&linked).unwrap();
         assert_eq!(found.stores.len(), 2, "{found:?}");
-        let out = command(&linked)
-            .unwrap()
-            .args(["log", "--oneline", "-1"])
-            .output()
-            .unwrap();
+        let out = run(&linked, &["log", "--oneline", "-1"]).unwrap();
         assert!(out.status.success(), "{out:?}");
         // A `.git` file that names the home folder gives no store.
         let stray = planted.dir.path().join("stray");
         std::fs::create_dir_all(&stray).unwrap();
         let home = std::env::var("HOME").unwrap();
         std::fs::write(stray.join(".git"), format!("gitdir: {home}\n")).unwrap();
-        assert_eq!(places(&stray).stores, Vec::<PathBuf>::new());
+        assert_eq!(places(&stray).unwrap().stores, Vec::<PathBuf>::new());
+    }
+
+    fn plain_git(dir: &Path, args: &[&str]) {
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?}");
+    }
+
+    /// A named pipe the folder's configuration includes: git would wait for
+    /// ever. It is stopped at its time limit, with what it started.
+    fn hanging_repository() -> super::planted::Planted {
+        let planted = planted_repository(Plant::Neutralized);
+        let fifo = planted.repo.join(".git/hang.cfg");
+        let path = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
+        // SAFETY: a NUL-terminated path in the test's own folder.
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        let config = planted.repo.join(".git/config");
+        let mut text = std::fs::read_to_string(&config).unwrap();
+        text.push_str("[include]\n\tpath = hang.cfg\n");
+        std::fs::write(&config, text).unwrap();
+        planted
+    }
+
+    #[test]
+    fn a_pipe_in_the_configuration_stops_git_at_its_limit() {
+        let planted = hanging_repository();
+        let started = std::time::Instant::now();
+        let result = run_within(
+            &planted.repo,
+            &["status", "--porcelain"],
+            std::time::Duration::from_secs(2),
+        );
+        let error = result.expect_err("git returned from a pipe");
+        assert_eq!(error.code, "git_timed_out", "{error:?}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+    }
+
+    /// The check and git run off the async runtime: a task beside them
+    /// keeps running while git hangs, on a runtime of one thread.
+    #[tokio::test(flavor = "current_thread")]
+    async fn the_check_never_blocks_the_async_runtime() {
+        let planted = hanging_repository();
+        let ticks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = ticks.clone();
+        let ticker = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        });
+        let result = run_async_within(
+            planted.repo.clone(),
+            vec!["status".to_string(), "--porcelain".to_string()],
+            std::time::Duration::from_secs(2),
+        )
+        .await;
+        ticker.abort();
+        assert_eq!(result.expect_err("git returned").code, "git_timed_out");
+        let ticked = ticks.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(ticked >= 50, "the runtime was blocked: {ticked} ticks");
+    }
+
+    /// A filter in a submodule's own configuration, which the check does
+    /// not read: `status` and `diff` never go into the submodule, so layer
+    /// 1 alone runs nothing (measured: only the command-line option holds,
+    /// even against a `submodule.<name>.ignore = none` the folder sets).
+    #[test]
+    fn a_filter_in_a_submodule_runs_nothing() {
+        let planted = planted_repository(Plant::Neutralized);
+        let inner = planted.dir.path().join("inner");
+        std::fs::create_dir_all(&inner).unwrap();
+        plain_git(&inner, &["init", "-q"]);
+        plain_git(&inner, &["config", "user.email", "t@example.test"]);
+        plain_git(&inner, &["config", "user.name", "t"]);
+        std::fs::write(inner.join("f.txt"), "a\n").unwrap();
+        plain_git(&inner, &["add", "f.txt"]);
+        plain_git(&inner, &["commit", "-qm", "one"]);
+        plain_git(
+            &planted.repo,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "-q",
+                &inner.to_string_lossy(),
+                "sub",
+            ],
+        );
+        plain_git(&planted.repo, &["commit", "-qm", "sub"]);
+        let modules = planted.repo.join(".git/modules/sub");
+        let script = planted.dir.path().join("planted.sh");
+        let mut config = std::fs::read_to_string(modules.join("config")).unwrap();
+        config.push_str(&format!(
+            "[filter \"evil\"]\n\tclean = \"{0} clean\"\n\tsmudge = \"{0} smudge\"\n",
+            script.display()
+        ));
+        std::fs::write(modules.join("config"), config).unwrap();
+        std::fs::create_dir_all(modules.join("info")).unwrap();
+        std::fs::write(modules.join("info/attributes"), "* filter=evil\n").unwrap();
+        // And the folder asks git to go into the submodule.
+        let outer = planted.repo.join(".git/config");
+        let mut text = std::fs::read_to_string(&outer).unwrap();
+        text.push_str("[submodule \"sub\"]\n\tignore = none\n");
+        std::fs::write(&outer, text).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::fs::write(planted.repo.join("sub/f.txt"), "b\n").unwrap();
+        // Setting it up with plain git ran the planted fsmonitor: only what
+        // follows counts.
+        planted.forget_marks();
+        // The control: the same command without the option goes into the
+        // submodule and runs its filter.
+        let _ = build(&planted.repo, None, true)
+            .args(["status", "--porcelain"])
+            .output()
+            .unwrap();
+        assert!(
+            !planted.marks().is_empty(),
+            "without the option, nothing ran in the submodule"
+        );
+        planted.forget_marks();
+        let mut outputs = Vec::new();
+        for args in [
+            vec!["status", "--porcelain"],
+            vec!["diff", "--no-ext-diff", "--no-textconv", "HEAD"],
+        ] {
+            let output = build(&planted.repo, None, true)
+                .args(confined_args(&args))
+                .output()
+                .unwrap();
+            outputs.push(output.stdout);
+            outputs.push(output.stderr);
+        }
+        planted.assert_untouched(&outputs);
+        assert!(
+            String::from_utf8_lossy(&outputs[0]).contains("a.txt"),
+            "git did not run"
+        );
+    }
+
+    /// A `core.worktree` the folder names elsewhere: the check refuses the
+    /// folder, and the command's `GIT_WORK_TREE` (layer 1) alone keeps git
+    /// on the folder, so it tells nothing of the files elsewhere.
+    #[test]
+    fn a_working_tree_named_elsewhere_is_never_looked_at() {
+        let dir = tempfile::tempdir_in(
+            PathBuf::from(std::env::var_os("HOME").unwrap()).join("Library/Caches"),
+        )
+        .unwrap();
+        let store = dir.path().join("secretstore");
+        let folder = dir.path().join("folder");
+        std::fs::create_dir_all(&store).unwrap();
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(store.join("id_present"), "key\n").unwrap();
+        plain_git(&folder, &["init", "-q"]);
+        let empty = Command::new("git")
+            .args(["hash-object", "-w", "--stdin"])
+            .current_dir(&folder)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        let hash = String::from_utf8_lossy(&empty.stdout).trim().to_string();
+        for name in ["id_present", "id_absent"] {
+            plain_git(
+                &folder,
+                &[
+                    "update-index",
+                    "--add",
+                    "--cacheinfo",
+                    &format!("100644,{hash},{name}"),
+                ],
+            );
+        }
+        plain_git(
+            &folder,
+            &["config", "core.worktree", &store.to_string_lossy()],
+        );
+        let refused = run(&folder, &["status", "--porcelain"]).expect_err("not refused");
+        assert_eq!(refused.code, "git_unsafe_folder");
+        let output = build(&folder, None, true)
+            .args(confined_args(&["status", "--porcelain"]))
+            .output()
+            .unwrap();
+        let said = String::from_utf8_lossy(&output.stdout);
+        assert!(said.contains("id_present"), "{said}");
+        let line = |name: &str| {
+            said.lines()
+                .find(|line| line.ends_with(name))
+                .map(|line| line[..2].to_string())
+        };
+        assert_eq!(
+            line("id_present"),
+            line("id_absent"),
+            "git told one file elsewhere from the other: {said}"
+        );
     }
 
     /// The profile is an argument of each call: calls at once all run.
@@ -758,15 +1109,7 @@ mod tests {
                 let repo = repo.clone();
                 std::thread::spawn(move || {
                     (0..6)
-                        .map(|_| {
-                            command(&repo)
-                                .unwrap()
-                                .args(["rev-parse", "HEAD"])
-                                .output()
-                                .unwrap()
-                                .status
-                                .success()
-                        })
+                        .map(|_| run(&repo, &["rev-parse", "HEAD"]).unwrap().status.success())
                         .filter(|ok| !ok)
                         .count()
                 })

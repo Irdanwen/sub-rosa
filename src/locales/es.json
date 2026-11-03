@@ -6617,5 +6617,7 @@
   "Zone tools": "Herramientas de zona",
   "Zoom": "Zoom",
   "Zoom in": "Acercar",
-  "Zoom out": "Alejar"
+  "Zoom out": "Alejar",
+  "This folder's git configuration names a program git would run, or a working tree elsewhere, so Sub Rosa does not run git on it.": "La configuración de git de esta carpeta nombra un programa que git ejecutaría, o un árbol de trabajo en otro lugar, así que Sub Rosa no ejecuta git en ella.",
+  "Git took too long on this folder and was stopped.": "Git tardó demasiado en esta carpeta y se detuvo."
 }
