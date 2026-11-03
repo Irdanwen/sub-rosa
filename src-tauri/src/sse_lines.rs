@@ -12,6 +12,12 @@
 //! read up to that point looks like a short answer, so every reader checks the
 //! stream said it was over (a `finish_reason`, or `[DONE]`) before trusting
 //! what it read.
+//!
+//! And a stream can fail after its 200: Carpe Diem then tells it inside the
+//! stream, as a `data: {"error": {…}}` frame in OpenAI's envelope, before its
+//! `[DONE]` (an upstream that broke after its first token, a router race
+//! silent past its guard). That frame makes the reply an error, whatever the
+//! `[DONE]` after it says.
 
 use crate::domain::types::AppError;
 
@@ -105,11 +111,13 @@ impl ChunkSource for crate::june_api::AgentChatCompletionsResponse {
     }
 }
 
-/// The frames of a streamed chat completion, and whether it said it was over.
+/// The frames of a streamed chat completion, whether it said it was over, and
+/// the error it told inside, if any.
 #[derive(Debug, Default)]
 pub struct CompletionFrames {
     lines: SseLines,
     finished: bool,
+    error: Option<AppError>,
 }
 
 impl CompletionFrames {
@@ -132,12 +140,25 @@ impl CompletionFrames {
         self.finished
     }
 
+    /// The error the stream told inside (the first one), which fails the reply
+    /// however it ended. Frames after it are not handed back.
+    pub fn take_error(&mut self) -> Option<AppError> {
+        self.error.take()
+    }
+
     fn frame(&mut self, line: &str) -> Option<serde_json::Value> {
         if line.trim().strip_prefix("data:").map(str::trim) == Some("[DONE]") {
             self.finished = true;
             return None;
         }
         let frame = data_frame(line)?;
+        if self.error.is_some() {
+            return None;
+        }
+        if let Some(error) = stream_error(&frame) {
+            self.error = Some(error);
+            return None;
+        }
         let finishes = frame
             .get("choices")
             .and_then(serde_json::Value::as_array)
@@ -151,6 +172,37 @@ impl CompletionFrames {
         self.finished |= finishes;
         Some(frame)
     }
+}
+
+/// The error an error frame tells, or `None` for any other frame. A payment
+/// refusal is the app's `insufficient_credits`, worded like the same refusal
+/// answered as a status; anything else keeps Carpe Diem's message, under a
+/// code no reader replays (the attempt may have been billed for what it sent).
+#[must_use]
+pub fn stream_error(frame: &serde_json::Value) -> Option<AppError> {
+    let error = frame.get("error").filter(|error| !error.is_null())?;
+    let text = |value: Option<&serde_json::Value>| {
+        value
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(str::to_string)
+    };
+    let kind = text(error.get("type"));
+    let code = text(error.get("code")).or_else(|| text(frame.get("code")));
+    let payment = kind.as_deref() == Some("insufficient_quota")
+        || code.as_deref() == Some("PAYMENT_REQUIRED");
+    if payment {
+        return Some(crate::june_api::insufficient_credits_error());
+    }
+    let message = text(Some(error))
+        .or_else(|| text(error.get("message")))
+        .unwrap_or_else(|| "The model stopped with an error. Try again.".to_string());
+    let mut app_error = AppError::new("upstream_stream_error", message);
+    if let Some(code) = code {
+        app_error.details = Some(serde_json::json!({ "upstreamCode": code }));
+    }
+    Some(app_error)
 }
 
 /// The error for a stream that ended before it said it was over. What arrived
@@ -187,6 +239,9 @@ pub(crate) async fn read_content(
         if collected.len() > before {
             on_delta(&collected[before..]);
         }
+    }
+    if let Some(error) = frames.take_error() {
+        return Err(error);
     }
     if !frames.is_finished() {
         return Err(cut_off_reply());
@@ -238,7 +293,9 @@ impl ChunkSource for ScriptedChunks {
 
 #[cfg(test)]
 mod tests {
-    use super::{data_frame, read_content, CompletionFrames, ScriptedChunks, SseLines};
+    use super::{
+        data_frame, read_content, stream_error, CompletionFrames, ScriptedChunks, SseLines,
+    };
 
     const HI: &str = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n";
 
@@ -272,6 +329,47 @@ mod tests {
             .await
             .expect_err("the body broke");
         assert_eq!(error.code, "june_request_failed");
+    }
+
+    #[tokio::test]
+    async fn an_error_told_inside_the_stream_fails_the_reply_despite_its_done() {
+        let quota = "data: {\"error\":{\"message\":\"Payment rail cannot cover this request\",\"type\":\"insufficient_quota\",\"code\":\"PAYMENT_REQUIRED\",\"param\":null}}\n\n";
+        let mut deltas = Vec::new();
+        let error = read_content(
+            &mut ScriptedChunks::of(&[HI, quota, "data: [DONE]\n\n"]),
+            |delta| deltas.push(delta.to_string()),
+        )
+        .await
+        .expect_err("an error frame, then [DONE]");
+        assert_eq!(error.code, "insufficient_credits");
+        assert!(error.message.contains("balance is too low"));
+        assert_eq!(deltas, ["hi"], "what came before stays shown");
+
+        let market = "data: {\"error\":{\"message\":\"No market could serve this request\",\"type\":\"server_error\",\"code\":\"NO_MARKET\"}}\n\ndata: [DONE]\n\n";
+        let error = read_content(&mut ScriptedChunks::of(&[market]), |_| {})
+            .await
+            .expect_err("an error frame alone");
+        assert_eq!(error.code, "upstream_stream_error");
+        assert_eq!(error.message, "No market could serve this request");
+        assert_eq!(
+            error.details,
+            Some(serde_json::json!({ "upstreamCode": "NO_MARKET" }))
+        );
+    }
+
+    #[test]
+    fn only_a_frame_with_an_error_is_one() {
+        assert!(stream_error(&serde_json::json!({ "choices": [] })).is_none());
+        assert!(stream_error(&serde_json::json!({ "error": null, "choices": [] })).is_none());
+        let plain = stream_error(
+            &serde_json::json!({ "error": "upstream idle", "code": "PROVIDER_STREAM_IDLE" }),
+        )
+        .expect("a string error");
+        assert_eq!(plain.message, "upstream idle");
+        assert_eq!(
+            plain.details,
+            Some(serde_json::json!({ "upstreamCode": "PROVIDER_STREAM_IDLE" }))
+        );
     }
 
     #[test]

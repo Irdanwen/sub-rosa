@@ -1049,3 +1049,22 @@ fn only_the_three_known_efforts_reach_the_wire() {
         serde_json::from_value(serde_json::json!({ "taskId": "t" })).unwrap();
     assert!(request.reasoning_effort.is_none());
 }
+
+#[tokio::test]
+async fn an_error_told_inside_the_stream_fails_the_turn_and_is_not_replayed() {
+    let mut source = crate::sse_lines::ScriptedChunks::of(&[
+        "data: {\"choices\":[{\"delta\":{\"content\":\"Half\"}}]}\n\n",
+        "data: {\"error\":{\"message\":\"The upstream went idle\",\"type\":\"server_error\",\"code\":\"PROVIDER_STREAM_IDLE\"}}\n\n",
+        "data: [DONE]\n\n",
+    ]);
+    let mut reply = StreamedReply::default();
+    let mut shown = String::new();
+    let error = collect_stream(&mut source, &mut reply, |text| shown.push_str(text))
+        .await
+        .expect_err("an error frame before [DONE] is a failed turn");
+    assert_eq!(error.code, "upstream_stream_error");
+    assert_eq!(error.message, "The upstream went idle");
+    assert_eq!(shown, "Half");
+    // The attempt may have been billed for what it sent: not replayed.
+    assert!(!replays_after(&error));
+}

@@ -2928,3 +2928,38 @@ restait collé dans son coin. Quatre causes, aucune propre à une session :
   on le gare sur un côté (`meeting-hud-zone`), alors que la rotation native qui
   devait les accompagner n'existe que sur macOS. Ses libellés d'accessibilité
   sont aussi hors de `t()`.
+
+## Erreur dite dans le flux par Carpe Diem (2026-11-03)
+
+Carpe Diem ne peut signaler un échec survenu après son 200 que dans le flux :
+une frame `data: {"error": {"message", "type", "code", "param"}}` (enveloppe
+OpenAI), puis `data: [DONE]`. /v1 le fait déjà (un amont muet ou coupé après
+son premier jeton). L'operator v330 le fait aussi sur `/router` (une course
+silencieuse au-delà de son garde de 20 s). `/v1/chat/completions` y passe
+aussi ses erreurs HTTP : `error` devient un objet, le `code` de premier niveau
+reste (doc partenaire de Carpe Diem, « Error bodies on the chat doors »).
+
+Jusqu'ici, aucun lecteur de flux ne regardait cette frame. Le `[DONE]` qui la
+suit faisait passer une réponse vide ou tronquée pour une réponse complète.
+`june-api` ne lit que le statut HTTP des erreurs : il n'est pas concerné.
+
+- **Site** (`streamCompletion`) : la frame devient une `CarpeDiemError` avec
+  le code de Carpe Diem et le statut que dit son `type` (402 pour
+  `insufficient_quota`, 429, 401, 403, 400, sinon 502). `failureText` la
+  formule donc comme le même refus rendu en statut.
+- **App** (`sse_lines::CompletionFrames`) : la frame est retenue
+  (`take_error`). `read_content` (Ask, réécriture, auto-test vocal) et
+  `agent_lite::collect_stream` la rendent en erreur :
+  - un refus de paiement donne `insufficient_credits`, avec le libellé partagé
+    `june_api::insufficient_credits_error` (« balance is too low », que lit
+    `isInsufficientCreditsMessage`) ;
+  - le reste donne `upstream_stream_error`, avec le message de Carpe Diem et
+    `details.upstreamCode`. Ce code n'est pas rejoué : la tentative a pu être
+    facturée pour ce qu'elle a envoyé.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/june_api.rs` | Libellé du refus de crédits extrait en `insufficient_credits_error()` | Réappliquer |
+| `src-tauri/src/agent_lite/mod.rs` | `collect_stream` rend `frames.take_error()` avant le test de fin | Réappliquer |

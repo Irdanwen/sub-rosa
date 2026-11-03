@@ -1224,15 +1224,7 @@ where
         return Err(AppError::new("unauthorized", "Not signed in."));
     }
     if envelope.error_code == Some(ERR_INSUFFICIENT_CREDITS) {
-        // Fork wording: Carpe Diem bills two separate rails (a prepaid account
-        // and a credits pool), and the active one can be empty while the other
-        // has funds — so "top up" is not always the fix. Point at the Payment
-        // panel. Keep "balance is too low" — the frontend's
-        // isInsufficientCreditsMessage string-matches it.
-        return Err(AppError::new(
-            "insufficient_credits",
-            "Your Carpe Diem balance is too low, or your active payment rail is out of funds. Open Settings and check Carpe Diem (prepaid account and credits are billed separately).",
-        ));
+        return Err(insufficient_credits_error());
     }
     let _ = path;
     let mut error = AppError::new(
@@ -1245,6 +1237,19 @@ where
         error.details = Some(serde_json::json!({ "retryAfterMs": retry_after_ms }));
     }
     Err(error)
+}
+
+/// Carpe Diem refused to bill the request. Fork wording: Carpe Diem bills two
+/// separate rails (a prepaid account and a credits pool), and the active one
+/// can be empty while the other has funds — so "top up" is not always the
+/// fix. Point at the Payment panel. Keep "balance is too low" — the
+/// frontend's isInsufficientCreditsMessage string-matches it. Shared with the
+/// same refusal told inside a stream (`sse_lines::stream_error`).
+pub(crate) fn insufficient_credits_error() -> AppError {
+    AppError::new(
+        "insufficient_credits",
+        "Your Carpe Diem balance is too low, or your active payment rail is out of funds. Open Settings and check Carpe Diem (prepaid account and credits are billed separately).",
+    )
 }
 
 fn response_retry_after_ms(response: &reqwest::Response) -> Option<u64> {
