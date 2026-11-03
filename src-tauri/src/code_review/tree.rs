@@ -222,20 +222,31 @@ mod tests {
 #[cfg(target_os = "macos")]
 mod planted_tests {
     use super::Git;
-    use crate::hermes_bridge::jailed_git::planted::{marks_in, planted_repository};
+    use crate::hermes_bridge::jailed_git::planted::{planted_repository, Plant};
 
     #[test]
     fn the_review_runs_nothing_the_jail_planted() {
-        let (_dir, repo, marks) = planted_repository();
-        let git = Git { folder: &repo };
+        // What the command's own configuration outranks: read, never run.
+        let planted = planted_repository(Plant::Neutralized);
+        let git = Git {
+            folder: &planted.repo,
+        };
         let head = git.head().expect("a head");
         let changed = git.changed_since(&head).unwrap();
         let before = git.file_at(&head, "a.txt").unwrap();
-        assert_eq!(marks_in(&marks), Vec::<String>::new());
+        planted.assert_untouched(&[before.clone().unwrap_or_default()]);
         assert!(
             changed.contains("a.txt") && changed.contains("new.txt"),
             "{changed:?}"
         );
         assert_eq!(before.as_deref(), Some(&b"one\n"[..]));
+        // A defined program: the folder is refused.
+        let planted = planted_repository(Plant::Programs);
+        let git = Git {
+            folder: &planted.repo,
+        };
+        assert!(git.head().is_none(), "a folder defining a program was read");
+        assert!(git.file_at("HEAD", "a.txt").is_err());
+        planted.assert_untouched(&[]);
     }
 }

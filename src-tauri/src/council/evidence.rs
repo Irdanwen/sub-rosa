@@ -452,14 +452,20 @@ mod tests {
 #[cfg(test)]
 #[cfg(target_os = "macos")]
 mod planted_tests {
-    use crate::hermes_bridge::jailed_git::planted::{marks_in, planted_repository};
+    use crate::hermes_bridge::jailed_git::planted::{planted_repository, Plant};
 
     #[tokio::test]
     async fn the_council_runs_nothing_the_jail_planted() {
-        let (_dir, repo, marks) = planted_repository();
-        let evidence = super::from_git(&repo.to_string_lossy(), None).await;
-        assert_eq!(marks_in(&marks), Vec::<String>::new());
+        // What the command's own configuration outranks: read, never run.
+        let planted = planted_repository(Plant::Neutralized);
+        let evidence = super::from_git(&planted.repo.to_string_lossy(), None).await;
+        planted.assert_untouched(&[evidence.text.clone().into_bytes()]);
         assert!(evidence.text.contains("a.txt"), "{}", evidence.text);
         assert!(evidence.text.contains("new.txt"), "{}", evidence.text);
+        // A defined program: the folder is not read at all.
+        let planted = planted_repository(Plant::Programs);
+        let evidence = super::from_git(&planted.repo.to_string_lossy(), None).await;
+        planted.assert_untouched(&[evidence.text.clone().into_bytes()]);
+        assert!(!evidence.text.contains("a.txt"), "{}", evidence.text);
     }
 }
