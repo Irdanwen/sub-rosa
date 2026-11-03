@@ -110,7 +110,11 @@ pub(crate) fn build(folder: &Path, sandbox: Option<&Sandbox>, neutral: bool) -> 
             cmd.env_remove(key);
         }
     }
+    // No system or global file, ever: the profile would refuse reading
+    // them, and they are the person's, not the folder's.
     cmd.env("LC_ALL", "C")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_PAGER", "cat");
@@ -118,9 +122,7 @@ pub(crate) fn build(folder: &Path, sandbox: Option<&Sandbox>, neutral: bool) -> 
         cmd.env("TMPDIR", tmp);
     }
     if neutral {
-        cmd.env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_ATTR_SOURCE", EMPTY_TREE)
+        cmd.env("GIT_ATTR_SOURCE", EMPTY_TREE)
             .env("GIT_CONFIG_COUNT", NEUTRAL_CONFIG.len().to_string());
         for (index, (key, value)) in NEUTRAL_CONFIG.iter().enumerate() {
             cmd.env(format!("GIT_CONFIG_KEY_{index}"), key)
@@ -633,6 +635,13 @@ mod tests {
         let sandbox = sandbox_for(&planted.repo).unwrap();
         let outputs = run_the_apps_reads(|| build(&planted.repo, Some(&sandbox), false));
         planted.assert_untouched(&outputs);
+        // And git ran: the test proves nothing if git stopped at once.
+        let status = build(&planted.repo, Some(&sandbox), false)
+            .args(["status", "--porcelain"])
+            .output()
+            .unwrap();
+        let said = String::from_utf8_lossy(&status.stdout);
+        assert!(said.contains("a.txt"), "git did not run: {status:?}");
     }
 
     /// A program planted between the check and the command (the jail
@@ -663,6 +672,12 @@ mod tests {
             outputs.push(output.stderr);
         }
         planted.assert_untouched(&outputs);
+        // And git ran (the status, second): nothing is proven otherwise.
+        assert!(
+            String::from_utf8_lossy(&outputs[2]).contains("a.txt"),
+            "git did not run: {}",
+            String::from_utf8_lossy(&outputs[3])
+        );
     }
 
     /// Layer 3 reads the repository and nothing beside it.
