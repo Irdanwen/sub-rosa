@@ -156,7 +156,9 @@ that are not jailed.
    the next pass finds them. A process that forks and exits in a
    tight loop lives a few microseconds under each pid, less than it takes
    to ask about it: a process is known by its pid and its start time, never
-   its pid alone (such a loop reuses pids within seconds), an answer about a
+   its pid alone (such a loop reuses pids within seconds), and both are
+   checked again just before each signal (see the second addendum of
+   2026-11-03), an answer about a
    process that ended while being asked is not kept, and a pass that met
    one proves nothing. Measured: without these, a loop forking as fast as
    it can survived 18 sweeps out of 20 (each answer was about a pid already
@@ -411,9 +413,15 @@ that are not jailed.
    network; a filter planted between the check and the command does not
    even start `/bin/sh` there. The profile is passed as an argument
    (`sandbox-exec -p`), never through a shared file another call could be
-   rewriting. Each layer alone stops what it covers, measured with a
+   rewriting. Each layer stops alone what it covers, measured with a
    planted script that leaves a mark, prints a secret file from outside
-   the folder and calls a local listener: plain git does all three. The
+   the folder and calls a local listener (plain git does all three): the
+   command's configuration and options stop what they outrank and keep git
+   out of submodules and on its own working tree; the check stops a
+   program defined in the configuration git reads for the folder, not one
+   planted after it; the profile stops what runs, whenever it was planted.
+   And every git the app runs has a time limit (see the second addendum of
+   2026-11-03). The
    process keeps the app's privacy responsibility: measured, a git started
    with it disclaimed cannot read a folder under `~/Documents` ("Unable to
    read current working directory: Operation not permitted"), where
@@ -673,4 +681,86 @@ a pass that met a process gone while asked is not quiet, the group of any
 process found in a session of the jail's is frozen, and every test process
 has null stdio and a guard that kills its sessions whatever the outcome
 (20 of 20 runs clean since).
+
+## Addendum 2026-11-03: the app's reads of what the jail writes (independent audit)
+
+An independent audit of this lot (6.5/10) found that the app still read,
+outside the jail and with authority, what the jail writes. Decision 14
+covered what git *runs*; nothing covered what the app *reads*.
+
+**Reads through links (present in 1.97.0).** The council read the working
+folder with calls that follow links: a `leak.md -> ~/.ssh/id_ed25519` the
+jail planted was read outside the jail and sent to the seats (external
+models), and a retake could copy it into the session's prompt. The code
+review read through a folder on the way replaced by a link. Now every file
+of a folder the jail writes that the app reads goes through one function,
+`confined_read.rs`: opened one component at a time from a folder held open,
+never following a link (`openat` with `O_NOFOLLOW`), a regular file only
+(a pipe answers at once instead of never), at most a bound. It serves the
+council (git and dates modes; the dates walk also skips links), the review
+(`read_current`), and the Files panel's previews, the image sent to the
+model, downloads and saves, which resolved and checked a path, then read
+it: they now read it again from `/` without following a link, so one put
+in between is refused. Measured: under a profile like the jail's (reads
+and writes refused on a credential store), `ln` to a file there is refused,
+so a hard link cannot stand in for a link. The two other readers found
+read names only (the mentions list skips links). `code/confined.rs` on the
+code plan's branch does the same; FORK_NOTES says to make them one.
+
+**The mark is not a proof (new in this lot).** The reaper took for the
+jail's any process whose arguments or environment held
+`SUBROSA_JAIL_MARK=<mark>` anywhere: a person's process started in a folder
+the jail named after its mark (`PWD`) would have been frozen and killed,
+and the belt let it through. Now the mark counts only as one whole
+environment entry, and only on a process under the jail's profile
+(`runs_under_the_jail`): every mark is given to a jailed spawn and the
+profile is inherited for good, so a carrier outside the jail got the mark
+some other way. Tested through the barrier: processes outside the jail
+with the mark in `PWD`, as an argument, or as the exact entry are never
+aimed at; a jailed carrier is.
+
+**Git could wait for ever.** A named pipe included by `.git/config` made
+every git the app runs wait without end, and the check ran synchronously on
+the async runtime's thread. Now each git has a time limit (30 s; the test
+uses 2 s); past it git's process group is killed (through the test barrier
+in tests, which also lets through a process descending from the test
+process itself, never one of the person's applications); and async callers
+run the check and git on a blocking thread.
+
+**Each layer, exactly.** The check does not read a submodule's
+configuration, and `status` and `diff` went into submodules: a filter
+there ran with the first two layers, only the profile stopped it. Now
+`status` and `diff` always get `--ignore-submodules=all` on the command
+line (measured: the same setting in the command's configuration loses to a
+`submodule.<name>.ignore = none` the folder sets). Decision 14 now says
+what each layer covers.
+
+**A working tree elsewhere.** A `core.worktree` the folder sets had the
+app's git describe files outside the repository (whether they exist, their
+size). Measured: neither `-c core.worktree` nor the command's
+configuration outranks it, `GIT_WORK_TREE` does; the app sets it to the
+tree it found, the check refuses a folder that names another, and the
+profile refuses even looking up the credential stores.
+
+**A refusal is said.** The review's start returned a refused folder as
+"no repository" and copied the folder instead; the council fell back to
+the files' dates without a word. Now the review shows the refusal, and the
+council's verdict carries a notice the person reads (and the seats see it
+in the evidence). The release notes said so before it was true.
+
+**The final kill.** It went to frozen pids and group numbers without
+looking again; a frozen process can be killed by another of the jail and
+its pid reused. Now each signal checks the pid and start time just before,
+and a frozen group's members are killed one by one, never by the group's
+number.
+
+**Still open.** The review's revert checks the file and resolves its
+folder, then writes: a folder on the way swapped for a link in between
+could still carry that write elsewhere (not measured). Copying a Files
+panel item to the clipboard hands Finder a path it reads later. The app's
+git no longer reads the person's global configuration, so a repository's
+git-lfs filter from there is not applied (its files whose dates changed
+show as changed) and files ignored only by the global excludes file show
+as new, which the council reads and sends to its seats. Trust in the
+reaper rests on `sandbox_check`, a private interface.
 
