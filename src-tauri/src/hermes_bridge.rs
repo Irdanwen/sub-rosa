@@ -6144,22 +6144,14 @@ fn reap_orphaned_hermes_runtimes_in_dir(directory: &Path) -> Result<(), AppError
         match action {
             HermesOwnershipAction::Skip => {}
             HermesOwnershipAction::DeleteStale => {
-                // The runtime of an earlier run is gone; what its jail left
-                // behind, started since its mark, is swept.
-                if let Some(mark) = record.jail_mark.as_deref() {
-                    jail_reaper::reap_mark(mark);
-                    jail_reaper::reap_jailed_orphans(mark);
-                }
+                jail_reaper::reap_an_earlier_run(record.jail_mark.as_deref());
                 remove_hermes_ownership_record(Some(&path)).map_err(|error| {
                     AppError::new("hermes_runtime_reap_failed", error.to_string())
                 })?;
             }
             HermesOwnershipAction::Reap => {
                 kill_process_group(record.runtime_pid);
-                if let Some(mark) = record.jail_mark.as_deref() {
-                    jail_reaper::reap_mark(mark);
-                    jail_reaper::reap_jailed_orphans(mark);
-                }
+                jail_reaper::reap_an_earlier_run(record.jail_mark.as_deref());
                 if !wait_for_recorded_hermes_runtime_exit(
                     record.runtime_pid,
                     &record.runtime_start,

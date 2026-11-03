@@ -135,6 +135,16 @@ pub(super) fn reap_jailed_orphans(mark: &str) -> usize {
     sweep(Vec::new(), None, true, mark_floor(mark))
 }
 
+/// What a jailed runtime of an earlier run left behind, from its record:
+/// what carries its mark and the jail's orphans started since. Nothing for
+/// a runtime that was not jailed.
+pub(super) fn reap_an_earlier_run(mark: Option<&str>) {
+    if let Some(mark) = mark {
+        reap_mark(mark);
+        reap_jailed_orphans(mark);
+    }
+}
+
 /// How long a sweep may chase processes that keep starting others.
 #[cfg(target_os = "macos")]
 const SWEEP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
