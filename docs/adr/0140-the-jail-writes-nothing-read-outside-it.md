@@ -130,17 +130,46 @@ that are not jailed.
    jailed spawn passes down (`jail_reaper.rs`), and every orphan whose
    profile is the jail's, whoever is responsible for it (a spawn with the
    private disclaim attribute changes nothing): the kernel is asked whether
-   that process may look up a marker service only the jail's profiles allow
-   (`xyz.carpediem.subrosa.jail`, held by nothing) and is refused a canary
+   that process may look up a marker service only this installation's jail
+   profiles allow (`xyz.carpediem.subrosa.jail.<hash of the app's own
+   executable path>`, held by nothing, so a development build beside the
+   installed app neither sweeps nor is swept by the other) and is refused a canary
    no profile of the jail allows (`xyz.carpediem.subrosa.jail-canary`), so
    a tool's profile that allows everything is left alone, the system's
    services the app uses (WebKit's, under their own profiles) are spared
    whatever their name or path, and a copy of a program under a `.xpc` name
    is not (a path asked of another process is always answered "denied",
-   measured; a service name is answered truly). The orphans are asked for
-   again until none is left. A one-off reader's or a sign-in's leftovers
-   die when it ends. A jailed process cannot change its profile, so it
-   cannot stop answering as the jail's.
+   measured; a service name is answered truly). An orphan of the jail is
+   also a jailed process whose jailed parent is one, or whose parent has
+   just ended: a loop that forks and exits leaves its newest pid with a
+   parent still exiting; what a live runtime started has the runtime, then
+   the app, above it and is spared. The sweep freezes (`SIGSTOP`) what it
+   finds, with its whole process group when that group lives in a session
+   other than the app's (every jailed spawn starts one, and no process can
+   join a group of another session), and looks again, until several passes
+   in a row find nothing new or five seconds have passed; then it kills
+   (`SIGKILL`) everything frozen and the frozen groups. A sweep that ended
+   quietly left everything it found stopped (a member of a frozen group or
+   a child of a frozen process still running is found again, and a pass
+   that finds one is not quiet), and a stopped process starts nothing; a
+   frozen parent, unlike a killed one, keeps its children its own until
+   the next pass finds them. A process that forks and exits in a
+   tight loop lives a few microseconds under each pid, less than it takes
+   to ask about it: a process is known by its pid and its start time, never
+   its pid alone (such a loop reuses pids within seconds), an answer about a
+   process that ended while being asked is not kept, and a pass that met
+   one proves nothing. Measured: without these, a loop forking as fast as
+   it can survived 18 sweeps out of 20 (each answer was about a pid already
+   gone, and only a jailed orphan's group was frozen); with them, none of
+   20 runs of the reaper's tests left anything. The sweep also runs at the app's start for
+   each runtime an earlier run left a record of (what its jail left
+   behind), and after a one-off reader (a reader runs when no sandboxed
+   runtime is up); never over the whole machine without a floor (see the
+   addendum of 2026-11-03). A sign-in's leftovers
+   die by their mark only, its runtime being up. What stays open: a
+   process that calls `setsid()` again at every fork, faster than a pass,
+   could outrun the freeze until the deadline; it keeps the jail and none
+   of the app's privacy grants.
 6. **The jail reaches only the system services it was measured to need.**
    A jailed process inherits the profile, but a service it asks to act runs
    outside it: LaunchServices started an application (`open -n X.app`),
@@ -177,7 +206,7 @@ that are not jailed.
    reading the person's files but for credential stores.
 
    The temp folders (H1). The jail writes one temp folder, its own
-   (`$TMPDIR/sr-jail`, made fresh by the app and given as its `TMPDIR`,
+   (`$TMPDIR/sr-jail`, made by the app, never through a link, and given as its `TMPDIR`,
    short so a socket path in it stays under 104 bytes), and not
    `/private/tmp`, `/private/var/tmp` or the app's `TMPDIR`: other programs
    keep their sockets there (a database's `.s.PGSQL.5432`, a terminal
@@ -193,7 +222,13 @@ that are not jailed.
    What breaks: a tool that writes `/tmp` or `/var/tmp` by name rather than
    through `TMPDIR`.
 
-   The loopback (H2). TCP and UDP to the machine itself (`localhost`,
+   UDP is refused outright (final pass): a broadcast or a multicast datagram
+   reached a listener of this machine on `0.0.0.0` (measured). Name
+   resolution goes through `mDNSResponder`'s socket, not UDP, and HTTP/3
+   clients fall back to TCP; a tool that sends its own DNS queries (`dig`)
+   fails.
+
+   The loopback (H2). TCP to the machine itself (`localhost`,
    which the kernel matches for 127.0.0.1, `::1` and the machine's own
    addresses) are refused but for the ports the app names at each start:
    its proxy (models and the built-in MCP servers), the runtime's own
@@ -232,7 +267,12 @@ that are not jailed.
    shared temp folder (H1), no other program's socket can be brought into
    those places, and a working folder may be no temp or run folder of the
    system (`/private/tmp`, `/private/var/tmp`, `/private/var/folders`, the
-   app's `TMPDIR`, `/private/var/run`, nor anything under one). A jailed process inherits neither `SSH_AUTH_SOCK`,
+   app's `TMPDIR`, `/private/var/run`, nor anything under one), nor a folder
+   of the person's that programs outside the jail run or read at login:
+   `~/Library/LaunchAgents` (agents launchd starts), `~/Library/Application
+   Support` (every app's data and scripts, Sub Rosa's own among them),
+   `~/Library/Preferences`, `~/Library/Scripts`, `~/Library/Services`,
+   `~/Library/Containers` and `~/Library/Group Containers`. A jailed process inherits neither `SSH_AUTH_SOCK`,
    `GPG_AGENT_INFO`, `DOCKER_HOST` nor a multiplexer's variables. Measured
    without breakage: Python (multiprocessing's own sockets included), Node,
    git and curl over HTTPS, and the runtime's session.
@@ -347,6 +387,39 @@ that are not jailed.
 13. **Nothing resumes on its own.** In the shared home too, the gateway's
    window for re-running interrupted turns at its start is one second (0
    means "always" to the runtime) and its delivery ledger is off.
+14. **Every `git` the app runs on a folder the jail writes is jailed and
+   neutralized** (`hermes_bridge/jailed_git.rs`). The code review and the
+   council read a session's working folder with git, outside the jail,
+   and git obeys the folder: measured, a `[core] fsmonitor = <cmd>` the jail
+   wrote into `.git/config` ran when the app ran `git status` (in 1.97.0
+   and on main). Now each command carries its own configuration, which
+   outranks the folder's (no system or global file, `core.fsmonitor=false`,
+   hooks at `/dev/null`, no external diff, no ssh command, no protocol, no
+   attributes file, in-tree attributes read from the empty tree with git
+   2.42 and later, optional locks off, `LC_ALL=C`); diffs ask for no
+   external diff and no textconv; a past file is read with `cat-file blob`,
+   never through a filter. Before each command the configuration git
+   would read is listed (includes followed), and a filter, a diff command,
+   a textconv or a merge driver defined there refuses the folder: no
+   setting turns those off, and `.git/info/attributes`, which the jail
+   writes too, could name them. And on macOS git runs under a profile that
+   refuses by default (on Apple's `system.sb`): it runs only git and its
+   helpers, reads git's installation, the system's libraries, the
+   repository (its working tree, and a linked worktree's store when the
+   `.git` file names one under `<store>/worktrees/`, never anywhere else)
+   and a temp folder of its own, writes only that folder, and reaches no
+   network; a filter planted between the check and the command does not
+   even start `/bin/sh` there. The profile is passed as an argument
+   (`sandbox-exec -p`), never through a shared file another call could be
+   rewriting. Each layer alone stops what it covers, measured with a
+   planted script that leaves a mark, prints a secret file from outside
+   the folder and calls a local listener: plain git does all three. The
+   process keeps the app's privacy responsibility: measured, a git started
+   with it disclaimed cannot read a folder under `~/Documents` ("Unable to
+   read current working directory: Operation not permitted"), where
+   working folders usually are; the profile bounds what those grants reach.
+   What remains: what git prints of the repository goes to the review and
+   the council, as before.
 
 ## What the person sees
 
@@ -397,7 +470,17 @@ that are not jailed.
 
 - **Still open:** Windows has no jail; the unrestricted mode is not jailed
   by design (its sessions read what the person and the unrestricted runtime
-  put in the shared home, nothing the jail writes).
+  put in the shared home, nothing the jail writes). A working folder is
+  the person's project, written by the jail: what the person's own tools
+  later run from it outside the jail (`.git/config`, hooks and
+  `.gitattributes` for their own git, `.envrc` for direnv, a build script,
+  an editor's workspace settings) is outside this ADR; only the app's own
+  git is guarded. The machine's addresses other than 127.0.0.1, `0.0.0.0`
+  and the Wi-Fi one (a VPN or Tailscale interface, a `lo0` alias) were not
+  measured against the `localhost` rule. `confstr(DARWIN_USER_TEMP_DIR)`
+  fails in the jail (its service is not on the allowlist); the jail's own
+  `TMPDIR` is enough for the command-line tools' shims, which then print no
+  warning (measured with `git` and `python3`).
 - **Tests:** the profile's write grants are pinned by hand and the shared
   home is never one (`the_write_grants_are_exactly_the_declared_list`); the
   kernel refuses every vector, every write in the shared home, a carrier
@@ -459,6 +542,19 @@ that are not jailed.
   (`home_prep.rs`, `guard.rs`); a session identifier is taken exactly or
   refused (`session_owner.rs`); only a plain address opens, as
   re-serialized, and no private issuer is asked (`mcp_oauth_origin.rs`).
+  The final pass: neither the code review nor the council runs an
+  fsmonitor, a filter, an external diff or a textconv planted in the
+  working folder, each of the two layers alone holding
+  (`jailed_git.rs`, `council/evidence.rs`, `code_review/tree.rs`); a
+  process that forks and exits as fast as it can dies with the runtime,
+  found by its mark or only as an orphan of the jail, and what a live
+  runtime started survives the start sweep; a pass that met a process gone
+  while asked is not quiet, and an answer about an ended process is never
+  reused for its pid; the child of an orphan of the jail is one; a
+  reader's leftover that dropped the mark dies with its frozen parent
+  (`jail_reaper.rs`); each installation has its own marker, no datagram
+  leaves the jail (`sandbox_profile_tests.rs`); no login folder is a
+  working folder (`hermes_working_dir.rs`).
   Each test was checked by breaking the rule it holds.
 
 ## Alternatives rejected
@@ -487,3 +583,94 @@ that are not jailed.
 - **Copying the unrestricted side's MCP sign-ins into the jail's home**: it
   spared a second sign-in, and handed the jail refresh tokens it was never
   granted.
+
+## Addendum 2026-11-03: a test barrier, a production belt, and the crashes they answer
+
+**The incident.** The Mac froze and had to be restarted three times while
+the reaper's mutation campaign ran on the live worktree. At least twice the
+mutant in place was `if !under && false {` in `orphan_of_the_jail`: it
+drops "does this process run under the jail?", so every process whose
+chain of parents reaches launchd answers as an orphan of the jail. Tests
+call `reap_jailed_orphans()` and `sweep(..., orphans = true)` for real, over
+the whole machine: under that mutant the sweep froze (`SIGSTOP`) and then
+killed the person's applications whose parent is launchd (the Dock, the
+Finder, the terminal). A Mac whose Dock and applications are frozen is a
+frozen Mac. Each crash also left the mutant in the worktree until the
+coordinator restored it from the run's journal. Nothing in the code under
+test could stop that, because the code under test was what had been
+mutated; and even without a mutant, a test that sweeps the whole machine
+while the person works, next to an installed Sub Rosa whose own runtime is
+jailed, was dangerous by construction.
+
+**The test barrier** (`jail_reaper_gate.rs`). Every signal the reaper sends
+(`kill`, `killpg`) goes through one module. In tests it consults the pids
+and sessions the test itself registered when it spawned them (the test
+harness's `LoopGuard`, never the code under test), refuses anything else
+without sending it, and fails the test naming the process it would have
+hit ("the reaper would have frozen pid N, comm X"); a group is let through
+only when the test created it. A thread can ask to note refusals instead
+of failing (the test below), and `SUBROSA_GATE_NOTE_ONLY=1` makes a whole
+run a census. The module is never mutated: the mutation runs work on a
+copy made with `git archive` and check the module with `cmp` before and
+after each mutant. Measured: the reaper's 17 tests sent no signal outside
+what they created, except in the one test that makes every process answer
+as the jail's, where the barrier blocked the two processes newer than the
+spawn that the test had not created (a compiler and a `sleep`), and the
+belt spared the 351 older ones.
+
+**The production belt** (`Belt` in `jail_reaper.rs`), independent of the
+"is it the jail's?" answer: the reaper never signals pid 1 or below, the
+app or one of its ancestors, a process of another user, or a process that
+started before the spawn the sweep is for. That floor is the mark's birth:
+`new_mark()` writes the time it was made into the mark
+(`jail-<seconds>-<microseconds>-<token>`), less a second for a clock that
+stepped, so a record an earlier run left carries its floor with its mark.
+A mark without a birth (made before this format) gives no floor, and a
+sweep without a floor signals nothing. A group is frozen whole only when
+its leader, if it still runs, passes the belt too. Each refusal is logged
+once. The start sweep no longer runs over the whole machine: it runs for
+each runtime an earlier run left a record of, with that record's mark.
+
+**What the belt does not do.** A process started after the spawn, of this
+user, that wrongly answers as the jail's is still in reach of a broken
+check; the belt bounds the damage to what started since, it does not
+replace the check. The tests cover each guard alone
+(`the_belt_refuses_each_process_it_guards`, `a_mark_carries_its_floor`,
+`a_marked_process_older_than_its_mark_is_spared`) and the dangerous mutant
+as a test (`a_sweep_that_takes_every_process_for_the_jails_touches_nothing_older`:
+every process answers as the jail's, and the sweep aims at nothing older
+than the spawn, spares the test's older orphan and still kills its newer
+one).
+
+**The app's git, the same day.** A security review found the profile of
+decision 14 too wide: it allowed by default and refused only writes, the
+network and credential stores, so a filter defined in a configuration the
+jail wrote and named by `.git/info/attributes` would run with almost every
+read. Decision 14 now describes the profile that refuses by default, the
+check of the configuration before each command, and the profile passed as
+an argument instead of a file rewritten at each call (a concurrent
+`sandbox-exec` could have read it half written). The mutation runs found
+two holes in the tests themselves, both fixed: the test of the profile alone
+proved nothing (git, run without the command's configuration, stopped at once
+on the person's `~/.gitconfig`, which the profile refuses; git now never
+reads a system or global file, and each layer's test checks that git did
+answer), and no test planted a program inside the repository, the only place
+where the profile's exec rule, rather than its read rule, is what stops it
+(measured: a script there runs through `/bin/sh`, and a compiled program
+runs, when exec is open).
+
+**The fifteen-hour survival** (same pass). A test process that forked in a
+tight loop outlived its test for fifteen hours and held the harness's pipes
+open. The cause, measured: the sweep then knew processes by pid alone and
+froze a whole group only for an orphan whose profile it had confirmed; each
+member of the loop lives a few microseconds, so each question was answered
+about a pid already gone, four quiet passes came in about 180 ms, and the
+sweep ended with the loop still running (18 failures and 2 hangs in 20
+runs). The test then failed without killing the loop, which had inherited
+the harness's stdout and stderr, so the harness waited for an end of file
+that never came. Both are fixed: a process is known by pid and start time,
+a pass that met a process gone while asked is not quiet, the group of any
+process found in a session of the jail's is frozen, and every test process
+has null stdio and a guard that kills its sessions whatever the outcome
+(20 of 20 runs clean since).
+
