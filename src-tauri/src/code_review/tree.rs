@@ -4,7 +4,6 @@
 
 use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 
 use sha2::Digest as _;
 
@@ -109,9 +108,8 @@ pub(super) struct Git<'a> {
 
 impl Git<'_> {
     fn run(&self, args: &[&str]) -> Result<Vec<u8>, AppError> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(self.folder)
+        // Neutralized and jailed (ADR-0140): the session writes this folder.
+        let output = crate::hermes_bridge::jailed_git::command(self.folder)?
             .args(args)
             .output()
             .map_err(|error| AppError::new("code_review_git_failed", error.to_string()))?;
@@ -148,7 +146,16 @@ impl Git<'_> {
     /// Files that differ from `head` in the working tree (tracked ones), and
     /// files git has never heard of that are not ignored.
     pub fn changed_since(&self, head: &str) -> Result<BTreeSet<String>, AppError> {
-        let mut names = self.names(&["diff", "--name-only", "-z", "--relative", head, "--"])?;
+        let mut names = self.names(&[
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--name-only",
+            "-z",
+            "--relative",
+            head,
+            "--",
+        ])?;
         names.extend(self.names(&["ls-files", "-z", "--others", "--exclude-standard"])?);
         Ok(names)
     }
@@ -167,8 +174,9 @@ impl Git<'_> {
         {
             return Ok(None);
         }
+        // The bytes as committed: never through a filter the folder names.
         let spec = format!("{head}:./{name}");
-        self.run(&["cat-file", "--filters", &spec]).map(Some)
+        self.run(&["cat-file", "blob", &spec]).map(Some)
     }
 }
 
@@ -205,5 +213,29 @@ mod tests {
             walk(dir.path(), 1).unwrap_err().code,
             "code_review_too_large"
         );
+    }
+}
+
+/// ADR-0140 (final pass): the code review reads a folder the jail wrote
+/// without running what it planted, and reads a past file as committed.
+#[cfg(test)]
+#[cfg(target_os = "macos")]
+mod planted_tests {
+    use super::Git;
+    use crate::hermes_bridge::jailed_git::planted::{marks_in, planted_repository};
+
+    #[test]
+    fn the_review_runs_nothing_the_jail_planted() {
+        let (_dir, repo, marks) = planted_repository();
+        let git = Git { folder: &repo };
+        let head = git.head().expect("a head");
+        let changed = git.changed_since(&head).unwrap();
+        let before = git.file_at(&head, "a.txt").unwrap();
+        assert_eq!(marks_in(&marks), Vec::<String>::new());
+        assert!(
+            changed.contains("a.txt") && changed.contains("new.txt"),
+            "{changed:?}"
+        );
+        assert_eq!(before.as_deref(), Some(&b"one\n"[..]));
     }
 }

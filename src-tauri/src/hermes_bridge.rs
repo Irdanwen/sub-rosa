@@ -6144,6 +6144,12 @@ fn reap_orphaned_hermes_runtimes_in_dir(directory: &Path) -> Result<(), AppError
         match action {
             HermesOwnershipAction::Skip => {}
             HermesOwnershipAction::DeleteStale => {
+                // The runtime of an earlier run is gone; what its jail left
+                // behind, started since its mark, is swept.
+                if let Some(mark) = record.jail_mark.as_deref() {
+                    jail_reaper::reap_mark(mark);
+                    jail_reaper::reap_jailed_orphans(mark);
+                }
                 remove_hermes_ownership_record(Some(&path)).map_err(|error| {
                     AppError::new("hermes_runtime_reap_failed", error.to_string())
                 })?;
@@ -6152,6 +6158,7 @@ fn reap_orphaned_hermes_runtimes_in_dir(directory: &Path) -> Result<(), AppError
                 kill_process_group(record.runtime_pid);
                 if let Some(mark) = record.jail_mark.as_deref() {
                     jail_reaper::reap_mark(mark);
+                    jail_reaper::reap_jailed_orphans(mark);
                 }
                 if !wait_for_recorded_hermes_runtime_exit(
                     record.runtime_pid,
@@ -8085,9 +8092,11 @@ pub mod guard;
 mod home_prep;
 pub(crate) mod home_split;
 mod jail_reaper;
+mod jail_reaper_gate;
 #[cfg(test)]
 #[cfg(target_os = "macos")]
 mod jail_runtime_tests;
+pub(crate) mod jailed_git;
 mod local_reads;
 mod mcp_login;
 mod mcp_oauth_origin;

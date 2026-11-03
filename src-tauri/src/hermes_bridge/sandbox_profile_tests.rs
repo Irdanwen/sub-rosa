@@ -1339,3 +1339,53 @@ fn the_jail_reaches_no_app_container_socket() {
     assert_eq!(said.matches("refused").count(), 3, "{said}");
     drop(listeners);
 }
+
+/// Final pass: no UDP leaves the jail, a broadcast or a datagram to a
+/// listener of this machine included; names still resolve.
+#[test]
+fn no_datagram_leaves_the_jail() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let listener = std::net::UdpSocket::bind("0.0.0.0:0").unwrap();
+    listener
+        .set_read_timeout(Some(std::time::Duration::from_millis(500)))
+        .unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let probe = format!(
+        "import socket\nfor host in ('255.255.255.255', '224.0.0.1', '127.0.0.1'):\n    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n    s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)\n    try:\n        s.sendto(b'x', (host, {port}))\n        print('SENT', host)\n    except OSError:\n        print('refused', host)\nsocket.getaddrinfo('localhost', 80)\nprint('NAMES')\n"
+    );
+    let out = Command::new(SANDBOX_EXEC_PATH)
+        .arg("-f")
+        .arg(&jail.profile_path)
+        .args(["/usr/bin/python3", "-I", "-c", &probe])
+        .output()
+        .expect("run the datagram probe");
+    let said = String::from_utf8_lossy(&out.stdout);
+    let mut buffer = [0u8; 16];
+    let received = listener.recv_from(&mut buffer).is_ok();
+    assert!(!said.contains("SENT"), "{said}");
+    assert!(said.contains("NAMES"), "{said}");
+    assert!(!received, "a datagram reached a listener of this machine");
+}
+
+/// Final pass: the marker is proper to an installation, so the installed
+/// app and a development build beside it never sweep each other's jail.
+#[test]
+fn each_installation_has_its_own_marker() {
+    let installed = super::marker_for(Path::new(
+        "/Applications/Sub Rosa.app/Contents/MacOS/os-june",
+    ));
+    let dev = super::marker_for(Path::new(
+        "/Users/x/Sub Rosa/src-tauri/target/debug/os-june",
+    ));
+    assert_ne!(installed, dev);
+    assert!(installed.starts_with("xyz.carpediem.subrosa.jail."));
+    assert_eq!(
+        installed,
+        super::marker_for(Path::new(
+            "/Applications/Sub Rosa.app/Contents/MacOS/os-june"
+        ))
+    );
+    assert_eq!(super::jail_marker_service(), super::jail_marker_service());
+}

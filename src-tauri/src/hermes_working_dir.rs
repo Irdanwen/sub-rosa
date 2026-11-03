@@ -88,6 +88,19 @@ fn guarded_system_prefixes() -> Vec<PathBuf> {
     }
 }
 
+/// Folders of the person's, relative to their home, never a working folder
+/// nor inside one's reach (ADR-0140): programs outside the jail run or read
+/// what is there.
+const GUARDED_HOME_FOLDERS: &[&str] = &[
+    "Library/LaunchAgents",
+    "Library/Application Support",
+    "Library/Preferences",
+    "Library/Scripts",
+    "Library/Services",
+    "Library/Containers",
+    "Library/Group Containers",
+];
+
 /// Locations refused only when picked EXACTLY (their subfolders are fine):
 /// container directories whose children are legitimate projects but whose
 /// whole tree is not — e.g. `/Volumes/USB/project` is a working folder,
@@ -215,6 +228,16 @@ fn validate_working_dir_with(
     for prefix in guarded_prefixes {
         if canonical.starts_with(canon(prefix)) {
             return Err(invalid("System folders can't be a working folder."));
+        }
+    }
+    // ADR-0140: what programs outside the jail run or read at login (agents
+    // launchd starts, every app's data and scripts, preferences, scripts and
+    // services, app containers) is never a folder the jail may write.
+    if let Some(home) = home.as_deref() {
+        for relative in GUARDED_HOME_FOLDERS {
+            if canonical.starts_with(canon(&home.join(relative))) {
+                return Err(invalid("System folders can't be a working folder."));
+            }
         }
     }
     if let Some(app_data_dir) = app_data_dir.as_deref() {
@@ -779,6 +802,26 @@ mod tests {
                     .unwrap_err();
             assert_eq!(refused.code, "working_dir_invalid", "{raw}");
         }
+    }
+
+    /// ADR-0140 (final pass): what runs or is read at login is no working
+    /// folder.
+    #[test]
+    fn refuses_the_folders_programs_run_at_login() {
+        let home = tempfile::tempdir().expect("tempdir");
+        for relative in [
+            "Library/LaunchAgents",
+            "Library/Application Support/Some App",
+            "Library/Preferences",
+        ] {
+            let folder = home.path().join(relative);
+            std::fs::create_dir_all(&folder).unwrap();
+            let refused = ok(folder.to_str().unwrap(), Some(home.path()), None).unwrap_err();
+            assert_eq!(refused.code, "working_dir_invalid", "{relative}");
+        }
+        let project = home.path().join("Projects/demo");
+        std::fs::create_dir_all(&project).unwrap();
+        assert!(ok(project.to_str().unwrap(), Some(home.path()), None).is_ok());
     }
 
     #[test]

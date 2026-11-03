@@ -128,14 +128,24 @@ async fn from_git(working_dir: &str, base_commit: Option<&str>) -> Evidence {
         .filter(|value| !value.is_empty())
         .unwrap_or("HEAD");
 
-    if let Some(stat) = git(working_dir, &["diff", "--stat", base]).await {
+    if let Some(stat) = git(
+        working_dir,
+        &["diff", "--no-ext-diff", "--no-textconv", "--stat", base],
+    )
+    .await
+    {
         if !stat.trim().is_empty() {
             out.push_str("<changed_files>\n");
             out.push_str(stat.trim());
             out.push_str("\n</changed_files>\n\n");
         }
     }
-    if let Some(diff) = git(working_dir, &["diff", base]).await {
+    if let Some(diff) = git(
+        working_dir,
+        &["diff", "--no-ext-diff", "--no-textconv", base],
+    )
+    .await
+    {
         if !diff.trim().is_empty() {
             out.push_str("<diff>\n");
             out.push_str(diff.trim());
@@ -285,10 +295,13 @@ fn finish(mut text: String, kind: &'static str) -> Evidence {
 
 /// Run git in a folder. `None` on any failure, which the callers read as "this
 /// path is not available" rather than as an error worth failing a verdict over.
+///
+/// Git runs with its configuration neutralized and under a read-only jail
+/// (ADR-0140): the working folder is written by the sandboxed session, and
+/// a command it planted in `.git/config` would otherwise run here.
 async fn git(working_dir: &str, args: &[&str]) -> Option<String> {
-    let output = tokio::process::Command::new("git")
-        .arg("-C")
-        .arg(working_dir)
+    let output = crate::hermes_bridge::jailed_git::tokio_command(Path::new(working_dir))
+        .ok()?
         .args(args)
         .output()
         .await
@@ -430,5 +443,23 @@ mod tests {
         let evidence = gather(dir.to_str().expect("path"), None, "2099-01-01T00:00:00Z").await;
         assert!(evidence.text.is_empty());
         let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+}
+
+/// ADR-0140 (final pass): reading a working folder the jail wrote runs
+/// nothing it planted (an fsmonitor command, a clean filter, an external
+/// diff, a textconv), and still reads the changes.
+#[cfg(test)]
+#[cfg(target_os = "macos")]
+mod planted_tests {
+    use crate::hermes_bridge::jailed_git::planted::{marks_in, planted_repository};
+
+    #[tokio::test]
+    async fn the_council_runs_nothing_the_jail_planted() {
+        let (_dir, repo, marks) = planted_repository();
+        let evidence = super::from_git(&repo.to_string_lossy(), None).await;
+        assert_eq!(marks_in(&marks), Vec::<String>::new());
+        assert!(evidence.text.contains("a.txt"), "{}", evidence.text);
+        assert!(evidence.text.contains("new.txt"), "{}", evidence.text);
     }
 }

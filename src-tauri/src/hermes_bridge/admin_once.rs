@@ -315,9 +315,12 @@ pub(super) fn run_blocking_in(
         let _ = stdin.write_all(request.to_string().as_bytes());
     }
     let finished = wait_with_timeout(child, ADMIN_TIMEOUT);
-    // Nothing the jailed reader started outlives it.
+    // Nothing the jailed reader started outlives it: what carries its mark,
+    // and the jail's orphans (a reader runs when no sandboxed runtime is up
+    // to own one).
     if let Some(mark) = &mark {
         super::jail_reaper::reap_mark(mark);
+        super::jail_reaper::reap_jailed_orphans(mark);
     }
     let finished = finished?;
     let text = std::fs::read_to_string(&out);

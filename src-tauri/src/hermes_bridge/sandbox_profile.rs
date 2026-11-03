@@ -344,7 +344,7 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
     // processes from any other sandboxed one (`jail_reaper`).
     out.push_str(&format!(
         "  (global-name {})\n",
-        sbpl_quote(JAIL_MARKER_SERVICE)
+        sbpl_quote(&jail_marker_service())
     ));
     out.push_str(")\n");
     push_unix_socket_rules(&mut out, grants);
@@ -669,7 +669,28 @@ fn write_profile(
 
 /// A service name only the jail's profiles allow and no service holds: how
 /// the reaper tells a process of the jail (ADR-0140, M2).
-pub(super) const JAIL_MARKER_SERVICE: &str = "xyz.carpediem.subrosa.jail";
+/// Proper to this installation (final pass): derived from the app's own
+/// executable path, so a development build running beside the installed app
+/// neither kills nor is killed by the other's sweep.
+pub(super) fn jail_marker_service() -> String {
+    static NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    NAME.get_or_init(|| {
+        let exe = std::env::current_exe().unwrap_or_default();
+        marker_for(&std::fs::canonicalize(&exe).unwrap_or(exe))
+    })
+    .clone()
+}
+
+/// The marker of the installation whose executable is `exe`.
+pub(super) fn marker_for(exe: &std::path::Path) -> String {
+    // FNV-1a over the path: stable across runs, distinct per copy.
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in exe.to_string_lossy().as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("xyz.carpediem.subrosa.jail.{hash:016x}")
+}
 
 /// A service name the jail's profile never allows (and no service holds): a
 /// profile that allows it allows everything, so it is not the jail's.
@@ -732,6 +753,10 @@ fn push_unix_socket_rules(out: &mut String, grants: &SandboxGrants<'_>) {
     // Not `(remote ip6 ...)`: measured on macOS 26, that filter makes the
     // loopback rule above lapse (every local port answered again).
     out.push_str("(deny network-outbound (remote tcp6 \"*:*\") (remote udp6 \"*:*\"))\n");
+    // UDP at all (final pass): a broadcast or multicast datagram reached a
+    // listener of this machine on 0.0.0.0, measured. Name resolution goes
+    // through mDNSResponder's socket, HTTP/3 falls back to TCP.
+    out.push_str("(deny network-outbound (remote udp \"*:*\"))\n");
     if !grants.loopback_ports.is_empty() {
         out.push_str("(allow network-outbound\n");
         for port in grants.loopback_ports {
@@ -864,7 +889,7 @@ fn linkless_paths(hermes_home: &Path) -> Vec<(bool, PathBuf)> {
 }
 
 #[cfg(target_os = "macos")]
-fn push_secret_stores(out: &mut String, home: &Path) {
+pub(super) fn push_secret_stores(out: &mut String, home: &Path) {
     for relative in crate::hermes_working_dir::SECRET_STORE_DIRS {
         out.push_str(&format!(
             "  (subpath {})\n",
