@@ -28,6 +28,9 @@ function statusLabel(status: FileChange["status"]): string {
 }
 
 function Diff({ change }: { change: FileChange }) {
+  if (change.sensitive) {
+    return <p className="code-review-note">{t("Sensitive file: its content is not shown.")}</p>;
+  }
   if (change.binary || !change.diff) {
     return (
       <p className="code-review-note">

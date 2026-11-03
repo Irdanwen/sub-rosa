@@ -35,6 +35,9 @@ const FILE_MAX_CHARS: usize = 6_000;
 /// How many new files are read in full. Past this the listing still names them.
 const MAX_NEW_FILES: usize = 20;
 
+/// What the seats read in place of a secret file's content.
+const SECRET_NOT_SENT: &str = "content not sent: sensitive file";
+
 /// Folders never worth reading into a prompt: they are outputs, not work.
 const SKIP_DIRS: &[&str] = &[
     ".git",
@@ -141,9 +144,20 @@ async fn from_git(working_dir: &str, base_commit: Option<&str>) -> Evidence {
         .filter(|value| !value.is_empty())
         .unwrap_or("HEAD");
 
-    if let Ok(stat) = git(
+    // A secret file's content never goes to the seats, whatever git says
+    // about it (ADR-0140): left out of the diff, named apart.
+    let secrets = crate::path_confinement::secret_pathspecs();
+    let with_secrets_out = |args: &[&'static str]| -> Vec<String> {
+        let mut all: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
+        all.push(base.to_string());
+        all.push("--".to_string());
+        all.push(".".to_string());
+        all.extend(secrets.iter().cloned());
+        all
+    };
+    if let Ok(stat) = git_owned(
         working_dir,
-        &["diff", "--no-ext-diff", "--no-textconv", "--stat", base],
+        with_secrets_out(&["diff", "--no-ext-diff", "--no-textconv", "--stat"]),
     )
     .await
     {
@@ -153,9 +167,9 @@ async fn from_git(working_dir: &str, base_commit: Option<&str>) -> Evidence {
             out.push_str("\n</changed_files>\n\n");
         }
     }
-    if let Ok(diff) = git(
+    if let Ok(diff) = git_owned(
         working_dir,
-        &["diff", "--no-ext-diff", "--no-textconv", base],
+        with_secrets_out(&["diff", "--no-ext-diff", "--no-textconv"]),
     )
     .await
     {
@@ -163,6 +177,20 @@ async fn from_git(working_dir: &str, base_commit: Option<&str>) -> Evidence {
             out.push_str("<diff>\n");
             out.push_str(diff.trim());
             out.push_str("\n</diff>\n\n");
+        }
+    }
+    if let Ok(names) = git(working_dir, &["diff", "--no-ext-diff", "--name-only", base]).await {
+        let secret: Vec<&str> = names
+            .lines()
+            .map(str::trim)
+            .filter(|name| crate::path_confinement::is_secret_file(Path::new(name)))
+            .collect();
+        if !secret.is_empty() {
+            out.push_str("<sensitive_files>\n");
+            for name in secret {
+                out.push_str(&format!("{name}: {SECRET_NOT_SENT}\n"));
+            }
+            out.push_str("</sensitive_files>\n\n");
         }
     }
 
@@ -287,6 +315,9 @@ async fn from_mtime(root: &Path, since_rfc3339: &str) -> Evidence {
 /// jail writes this folder, and a link there may point at what the jail
 /// itself cannot read.
 async fn render_file(root: &Path, relative: &str) -> String {
+    if crate::path_confinement::is_secret_file(Path::new(relative)) {
+        return format!("<file path=\"{relative}\">({SECRET_NOT_SENT})</file>\n");
+    }
     let root = root.to_path_buf();
     let name = relative.to_string();
     let read = tokio::task::spawn_blocking(move || {
@@ -350,11 +381,17 @@ fn finish(mut text: String, kind: &'static str) -> Evidence {
 /// read-only jail, within a time limit, off the async runtime (ADR-0140):
 /// the working folder is written by the sandboxed session.
 async fn git(working_dir: &str, args: &[&str]) -> Result<String, AppError> {
-    let output = crate::hermes_bridge::jailed_git::run_async(
-        std::path::PathBuf::from(working_dir),
+    git_owned(
+        working_dir,
         args.iter().map(|arg| arg.to_string()).collect(),
     )
-    .await?;
+    .await
+}
+
+async fn git_owned(working_dir: &str, args: Vec<String>) -> Result<String, AppError> {
+    let output =
+        crate::hermes_bridge::jailed_git::run_async(std::path::PathBuf::from(working_dir), args)
+            .await?;
     if !output.status.success() {
         return Err(AppError::new(
             "git_failed",
@@ -579,5 +616,78 @@ mod planted_tests {
         let notice = evidence.notice.expect("no notice");
         assert!(notice.contains("does not run git"), "{notice}");
         assert!(evidence.text.contains("<git_refused>"), "{}", evidence.text);
+    }
+
+    /// ADR-0140: a secret file's content never goes to the seats, whatever
+    /// git says: a tracked `.env` changed, an untracked key, both named.
+    #[tokio::test]
+    async fn a_secret_file_is_named_never_sent() {
+        let planted = planted_repository(Plant::Neutralized);
+        let git = |args: &[&str]| {
+            assert!(std::process::Command::new("git")
+                .arg("-C")
+                .arg(&planted.repo)
+                .args(args)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .output()
+                .unwrap()
+                .status
+                .success());
+        };
+        std::fs::write(planted.repo.join(".env"), "TOKEN=committed-value\n").unwrap();
+        git(&["add", "-f", ".env"]);
+        git(&["-c", "core.fsmonitor=false", "commit", "-qm", "env"]);
+        std::fs::write(planted.repo.join(".env"), "TOKEN=SECRET-IN-THE-DIFF\n").unwrap();
+        std::fs::write(planted.repo.join("id_ed25519"), "SECRET-UNTRACKED-KEY").unwrap();
+        let _home = crate::hermes_bridge::jailed_git::planted::FakeHome::ignoring("# none\n");
+        let evidence = super::gather(
+            &planted.repo.to_string_lossy(),
+            None,
+            "2020-01-01T00:00:00Z",
+        )
+        .await;
+        assert_eq!(evidence.kind, "git");
+        assert!(
+            !evidence.text.contains("SECRET-IN-THE-DIFF"),
+            "{}",
+            evidence.text
+        );
+        assert!(
+            !evidence.text.contains("committed-value"),
+            "{}",
+            evidence.text
+        );
+        assert!(
+            !evidence.text.contains("SECRET-UNTRACKED-KEY"),
+            "{}",
+            evidence.text
+        );
+        assert!(
+            evidence
+                .text
+                .contains(".env: content not sent: sensitive file"),
+            "{}",
+            evidence.text
+        );
+        assert!(evidence.text.contains("id_ed25519"), "{}", evidence.text);
+        assert!(evidence.text.contains("a.txt"), "{}", evidence.text);
+    }
+
+    /// And a `.env` the person ignores everywhere is not even named.
+    #[tokio::test]
+    async fn a_globally_ignored_file_is_not_read() {
+        let planted = planted_repository(Plant::Neutralized);
+        std::fs::write(planted.repo.join("local.secret"), "SECRET-GLOBALLY-IGNORED").unwrap();
+        let _home = crate::hermes_bridge::jailed_git::planted::FakeHome::ignoring("local.secret\n");
+        let evidence = super::gather(
+            &planted.repo.to_string_lossy(),
+            None,
+            "2020-01-01T00:00:00Z",
+        )
+        .await;
+        assert!(evidence.text.contains("new.txt"), "{}", evidence.text);
+        assert!(!evidence.text.contains("local.secret"), "{}", evidence.text);
+        assert!(!evidence.text.contains("SECRET-GLOBALLY-IGNORED"));
     }
 }

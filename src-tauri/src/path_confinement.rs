@@ -50,6 +50,72 @@ const SENSITIVE_FILES: &[&str] = &[
 /// Suffixes that carry a key or a lock regardless of the stem.
 const SENSITIVE_SUFFIXES: &[&str] = &[".lock", ".key", ".pem", ".p12", ".pfx"];
 
+/// The files whose content the app never sends anywhere (to the council's
+/// seats, into the code review), whatever git says about them: a secret a
+/// session's folder holds, ignored or not (ADR-0140, third addendum of
+/// 2026-11-03). One leading or one trailing `*` at most; compared without
+/// case. Also the pathspecs that keep them out of a diff
+/// (`secret_pathspecs`). Meant to be reused (C3.5).
+pub const SECRET_FILE_PATTERNS: &[&str] = &[
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*.key",
+    "id_rsa*",
+    "id_ed25519*",
+    "*.p12",
+    ".npmrc",
+    ".pypirc",
+    ".netrc",
+    "credentials*",
+];
+
+fn matches_pattern(name: &str, pattern: &str) -> bool {
+    if let Some(suffix) = pattern.strip_prefix('*') {
+        name.ends_with(suffix)
+    } else if let Some(prefix) = pattern.strip_suffix('*') {
+        name.starts_with(prefix)
+    } else {
+        name == pattern
+    }
+}
+
+/// Whether `relative` (a path inside a working folder) is a file whose
+/// content is never sent: its name matches `SECRET_FILE_PATTERNS`, or it
+/// sits in a credential folder (`.ssh`, `.aws`...).
+pub fn is_secret_file(relative: &Path) -> bool {
+    let names: Vec<String> = relative
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(name) => name.to_str().map(str::to_ascii_lowercase),
+            _ => None,
+        })
+        .collect();
+    let in_store = names
+        .iter()
+        .any(|name| SENSITIVE_DIRECTORIES.contains(&name.as_str()));
+    in_store
+        || names.last().is_some_and(|name| {
+            SECRET_FILE_PATTERNS
+                .iter()
+                .any(|pattern| matches_pattern(name, pattern))
+        })
+}
+
+/// Git pathspecs that leave every secret file out of a command (a diff,
+/// its stat), at any depth, without case.
+pub fn secret_pathspecs() -> Vec<String> {
+    SECRET_FILE_PATTERNS
+        .iter()
+        .map(|pattern| format!(":(exclude,glob,icase)**/{pattern}"))
+        .chain(
+            SENSITIVE_DIRECTORIES
+                .iter()
+                .map(|folder| format!(":(exclude,glob,icase)**/{folder}/**")),
+        )
+        .collect()
+}
+
 /// Whether `candidate` sits under `root`, without touching the filesystem.
 ///
 /// A `..` anywhere in `candidate` fails outright rather than being normalized:
@@ -85,6 +151,9 @@ pub fn is_sensitive_component(name: &str) -> bool {
         || SENSITIVE_FILES.contains(&normalized.as_str())
         || normalized == ".env"
         || normalized.starts_with(".env.")
+        || SECRET_FILE_PATTERNS
+            .iter()
+            .any(|pattern| matches_pattern(&normalized, pattern))
         || SENSITIVE_SUFFIXES
             .iter()
             .any(|suffix| normalized.ends_with(suffix))
@@ -349,5 +418,41 @@ mod tests {
             .is_err(),
             "the deepest existing ancestor is canonicalized, so the link resolves out"
         );
+    }
+
+    #[test]
+    fn secret_files_are_known_by_name_whatever_the_case() {
+        for name in [
+            ".env",
+            "app/.env.production",
+            "certs/server.pem",
+            "tls.KEY",
+            "id_rsa",
+            "id_rsa.pub",
+            "deploy/id_ed25519_github",
+            "store.p12",
+            ".npmrc",
+            ".pypirc",
+            ".netrc",
+            "credentials",
+            "config/credentials.json",
+            ".ssh/config",
+            "home/.aws/config",
+        ] {
+            assert!(is_secret_file(Path::new(name)), "{name}");
+        }
+        for name in [
+            "src/main.rs",
+            "env.ts",
+            ".envrc",
+            "keys.md",
+            "README",
+            "Cargo.lock",
+        ] {
+            assert!(!is_secret_file(Path::new(name)), "{name}");
+        }
+        assert!(secret_pathspecs()
+            .iter()
+            .all(|spec| spec.starts_with(":(exclude,glob,icase)**/")));
     }
 }

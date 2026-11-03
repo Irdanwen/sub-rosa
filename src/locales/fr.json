@@ -6619,5 +6619,6 @@
   "Zoom in": "Zoom avant",
   "Zoom out": "Zoom arrière",
   "This folder's git configuration names a program git would run, or a working tree elsewhere, so Sub Rosa does not run git on it.": "La configuration git de ce dossier nomme un programme que git exécuterait, ou un arbre de travail ailleurs : Sub Rosa n'y lance donc pas git.",
-  "Git took too long on this folder and was stopped.": "Git a mis trop de temps sur ce dossier et a été arrêté."
+  "Git took too long on this folder and was stopped.": "Git a mis trop de temps sur ce dossier et a été arrêté.",
+  "Sensitive file: its content is not shown.": "Fichier sensible : son contenu n'est pas affiché."
 }

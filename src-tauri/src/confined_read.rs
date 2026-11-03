@@ -112,49 +112,132 @@ fn plain_components(relative: &Path) -> Result<Vec<&std::ffi::OsStr>, Refused> {
 }
 
 #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
-fn open_beneath(root: &Path, relative: &Path) -> Result<std::fs::File, Refused> {
-    use std::os::fd::{FromRawFd as _, OwnedFd};
+mod at {
+    //! `openat` and its kin, one component at a time, never through a link.
+    use std::ffi::{CStr, CString};
+    use std::os::fd::{AsRawFd as _, FromRawFd as _, OwnedFd};
     use std::os::unix::ffi::OsStrExt as _;
+    use std::path::Path;
 
-    let names = plain_components(relative)?;
-    let root = std::fs::canonicalize(root).map_err(Refused::Io)?;
-    let root_c =
-        std::ffi::CString::new(root.as_os_str().as_bytes()).map_err(|_| Refused::NotPlain)?;
-    let open = |dir: Option<&OwnedFd>, name: &std::ffi::CStr, flags: libc::c_int| {
+    use super::Refused;
+
+    /// A folder, opened without following a link.
+    pub(super) const FOLDER: libc::c_int =
+        libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+
+    pub(super) fn c_name(name: &std::ffi::OsStr) -> Result<CString, Refused> {
+        CString::new(name.as_bytes()).map_err(|_| Refused::NotPlain)
+    }
+
+    fn refused(error: std::io::Error) -> Refused {
+        match error.raw_os_error() {
+            Some(libc::ELOOP) => Refused::Link,
+            Some(libc::ENOTDIR) => Refused::NotAFile,
+            _ => Refused::Io(error),
+        }
+    }
+
+    /// `open(2)` of `name` in `dir` (or of the path `name` alone).
+    pub(super) fn open(
+        dir: Option<&OwnedFd>,
+        name: &CStr,
+        flags: libc::c_int,
+        mode: libc::c_uint,
+    ) -> Result<OwnedFd, Refused> {
         // SAFETY: `name` is NUL-terminated; `dir`, when given, is an open
         // folder descriptor; the result is owned below or an error.
         let fd = unsafe {
             match dir {
-                Some(dir) => {
-                    libc::openat(std::os::fd::AsRawFd::as_raw_fd(dir), name.as_ptr(), flags)
-                }
-                None => libc::open(name.as_ptr(), flags),
+                Some(dir) => libc::openat(dir.as_raw_fd(), name.as_ptr(), flags, mode),
+                None => libc::open(name.as_ptr(), flags, mode),
             }
         };
         if fd < 0 {
-            let error = std::io::Error::last_os_error();
-            return Err(match error.raw_os_error() {
-                Some(libc::ELOOP) => Refused::Link,
-                Some(libc::ENOTDIR) => Refused::NotAFile,
-                _ => Refused::Io(error),
-            });
+            return Err(refused(std::io::Error::last_os_error()));
         }
         // SAFETY: a descriptor just returned by open(2), owned from here.
         Ok(unsafe { OwnedFd::from_raw_fd(fd) })
-    };
-    let folder_flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
-    let mut dir = open(None, &root_c, folder_flags)?;
-    let (last, between) = names.split_last().ok_or(Refused::NotPlain)?;
-    for name in between {
-        let name = std::ffi::CString::new(name.as_bytes()).map_err(|_| Refused::NotPlain)?;
-        dir = open(Some(&dir), &name, folder_flags)?;
     }
-    let last = std::ffi::CString::new(last.as_bytes()).map_err(|_| Refused::NotPlain)?;
+
+    /// The folder `root` (resolved once), then each of `between` below it,
+    /// none followed through a link; with `create`, a missing one is made.
+    pub(super) fn folder(
+        root: &Path,
+        between: &[&std::ffi::OsStr],
+        create: bool,
+    ) -> Result<OwnedFd, Refused> {
+        let root = std::fs::canonicalize(root).map_err(Refused::Io)?;
+        let mut dir = open(None, &c_name(root.as_os_str())?, FOLDER, 0)?;
+        for name in between {
+            let name = c_name(name)?;
+            dir = match open(Some(&dir), &name, FOLDER, 0) {
+                Err(Refused::Io(error))
+                    if create && error.kind() == std::io::ErrorKind::NotFound =>
+                {
+                    // SAFETY: a NUL-terminated name in an open folder.
+                    if unsafe { libc::mkdirat(dir.as_raw_fd(), name.as_ptr(), 0o777) } != 0 {
+                        return Err(refused(std::io::Error::last_os_error()));
+                    }
+                    open(Some(&dir), &name, FOLDER, 0)?
+                }
+                other => other?,
+            };
+        }
+        Ok(dir)
+    }
+
+    /// What stands at `name` in `dir`, not followed: `None` when nothing.
+    pub(super) fn kind(dir: &OwnedFd, name: &CStr) -> Result<Option<libc::mode_t>, Refused> {
+        let mut stat: libc::stat = unsafe { std::mem::zeroed() };
+        // SAFETY: `stat` is one `struct stat`; `name` is NUL-terminated.
+        let done = unsafe {
+            libc::fstatat(
+                dir.as_raw_fd(),
+                name.as_ptr(),
+                &mut stat,
+                libc::AT_SYMLINK_NOFOLLOW,
+            )
+        };
+        if done != 0 {
+            let error = std::io::Error::last_os_error();
+            if error.kind() == std::io::ErrorKind::NotFound {
+                return Ok(None);
+            }
+            return Err(Refused::Io(error));
+        }
+        Ok(Some(stat.st_mode & libc::S_IFMT))
+    }
+
+    pub(super) fn rename(dir: &OwnedFd, from: &CStr, to: &CStr) -> Result<(), Refused> {
+        // SAFETY: two NUL-terminated names in the same open folder.
+        if unsafe { libc::renameat(dir.as_raw_fd(), from.as_ptr(), dir.as_raw_fd(), to.as_ptr()) }
+            != 0
+        {
+            return Err(Refused::Io(std::io::Error::last_os_error()));
+        }
+        Ok(())
+    }
+
+    pub(super) fn unlink(dir: &OwnedFd, name: &CStr) -> Result<(), Refused> {
+        // SAFETY: a NUL-terminated name in an open folder.
+        if unsafe { libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), 0) } != 0 {
+            return Err(Refused::Io(std::io::Error::last_os_error()));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
+fn open_beneath(root: &Path, relative: &Path) -> Result<std::fs::File, Refused> {
+    let names = plain_components(relative)?;
+    let (last, between) = names.split_last().ok_or(Refused::NotPlain)?;
+    let dir = at::folder(root, between, false)?;
     // Non-blocking, so a pipe answers at once instead of never.
-    let fd = open(
+    let fd = at::open(
         Some(&dir),
-        &last,
+        &at::c_name(last)?,
         libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
+        0,
     )?;
     let file = std::fs::File::from(fd);
     let meta = file.metadata().map_err(Refused::Io)?;
@@ -162,6 +245,97 @@ fn open_beneath(root: &Path, relative: &Path) -> Result<std::fs::File, Refused> 
         return Err(Refused::NotAFile);
     }
     Ok(file)
+}
+
+/// Writes `bytes` as the regular file at `relative` under `root`, by the
+/// same way as a confined read: every folder on the way opened without
+/// following a link (made when missing), the bytes written to a new file
+/// beside it, renamed over it within that folder. What stands at the name
+/// must be a regular file or nothing; a link there or on the way refuses
+/// the write, so nothing lands outside `root`.
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
+pub fn write_beneath(root: &Path, relative: &Path, bytes: &[u8]) -> Result<(), Refused> {
+    use std::io::Write as _;
+    let names = plain_components(relative)?;
+    let (last, between) = names.split_last().ok_or(Refused::NotPlain)?;
+    let dir = at::folder(root, between, true)?;
+    let name = at::c_name(last)?;
+    if let Some(kind) = at::kind(&dir, &name)? {
+        if kind == libc::S_IFLNK {
+            return Err(Refused::Link);
+        }
+        if kind != libc::S_IFREG {
+            return Err(Refused::NotAFile);
+        }
+    }
+    let mut temporary = std::ffi::OsString::from(".");
+    temporary.push(last);
+    temporary.push(".subrosa-revert");
+    let temporary = at::c_name(&temporary)?;
+    let _ = at::unlink(&dir, &temporary);
+    let fd = at::open(
+        Some(&dir),
+        &temporary,
+        libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        0o666,
+    )?;
+    let mut file = std::fs::File::from(fd);
+    let written = file.write_all(bytes).and_then(|()| file.sync_all());
+    drop(file);
+    if let Err(error) = written {
+        let _ = at::unlink(&dir, &temporary);
+        return Err(Refused::Io(error));
+    }
+    at::rename(&dir, &temporary, &name).inspect_err(|_| {
+        let _ = at::unlink(&dir, &temporary);
+    })
+}
+
+/// Removes the regular file at `relative` under `root`, the same way;
+/// nothing there is not an error, anything but a regular file refuses.
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
+pub fn remove_beneath(root: &Path, relative: &Path) -> Result<(), Refused> {
+    let names = plain_components(relative)?;
+    let (last, between) = names.split_last().ok_or(Refused::NotPlain)?;
+    let dir = match at::folder(root, between, false) {
+        Err(Refused::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        other => other?,
+    };
+    let name = at::c_name(last)?;
+    match at::kind(&dir, &name)? {
+        None => Ok(()),
+        Some(kind) if kind == libc::S_IFREG => at::unlink(&dir, &name),
+        Some(kind) if kind == libc::S_IFLNK => Err(Refused::Link),
+        Some(_) => Err(Refused::NotAFile),
+    }
+}
+
+#[cfg(not(all(unix, not(any(target_os = "ios", target_os = "android")))))]
+pub fn write_beneath(root: &Path, relative: &Path, bytes: &[u8]) -> Result<(), Refused> {
+    let names = plain_components(relative)?;
+    let path = names
+        .iter()
+        .fold(root.to_path_buf(), |path, name| path.join(name));
+    if std::fs::symlink_metadata(&path).is_ok_and(|meta| !meta.is_file()) {
+        return Err(Refused::NotAFile);
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(Refused::Io)?;
+    }
+    std::fs::write(&path, bytes).map_err(Refused::Io)
+}
+
+#[cfg(not(all(unix, not(any(target_os = "ios", target_os = "android")))))]
+pub fn remove_beneath(root: &Path, relative: &Path) -> Result<(), Refused> {
+    let names = plain_components(relative)?;
+    let path = names
+        .iter()
+        .fold(root.to_path_buf(), |path, name| path.join(name));
+    match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_file() => std::fs::remove_file(&path).map_err(Refused::Io),
+        Ok(_) => Err(Refused::NotAFile),
+        Err(_) => Ok(()),
+    }
 }
 
 #[cfg(not(all(unix, not(any(target_os = "ios", target_os = "android")))))]
@@ -297,6 +471,46 @@ mod tests {
         assert!(matches!(
             read_beneath(&root, Path::new("/etc/passwd"), 1024),
             Err(Refused::NotPlain)
+        ));
+    }
+
+    /// A write goes where it is meant to, folders made on the way.
+    #[test]
+    fn a_write_lands_inside() {
+        let (_dir, root) = folder();
+        write_beneath(&root, Path::new("sub/a.txt"), b"again").unwrap();
+        assert_eq!(std::fs::read(root.join("sub/a.txt")).unwrap(), b"again");
+        write_beneath(&root, Path::new("new/deeper/b.txt"), b"b").unwrap();
+        assert_eq!(std::fs::read(root.join("new/deeper/b.txt")).unwrap(), b"b");
+        remove_beneath(&root, Path::new("new/deeper/b.txt")).unwrap();
+        assert!(!root.join("new/deeper/b.txt").exists());
+    }
+
+    /// A folder on the way that is a link refuses the write: nothing lands
+    /// outside.
+    #[test]
+    fn a_write_never_goes_through_a_link() {
+        let (dir, root) = folder();
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("d")).unwrap();
+        assert!(matches!(
+            write_beneath(&root, Path::new("d/f.txt"), b"x"),
+            Err(Refused::Link) | Err(Refused::NotAFile)
+        ));
+        assert!(!outside.join("f.txt").exists());
+        std::os::unix::fs::symlink(dir.path().join("secret.txt"), root.join("leak")).unwrap();
+        assert!(matches!(
+            write_beneath(&root, Path::new("leak"), b"x"),
+            Err(Refused::Link)
+        ));
+        assert_eq!(
+            std::fs::read(dir.path().join("secret.txt")).unwrap(),
+            b"OUTSIDE-SECRET"
+        );
+        assert!(matches!(
+            remove_beneath(&root, Path::new("leak")),
+            Err(Refused::Link)
         ));
     }
 

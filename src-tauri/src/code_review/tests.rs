@@ -281,3 +281,47 @@ fn a_subfolder_of_a_repository_is_reviewed_alone() {
     review::revert(&bench.store, &review, "main.rs").unwrap();
     assert_eq!(read(&app, "main.rs"), "main\n");
 }
+
+/// ADR-0140: a folder on the way replaced by a link between the checks and
+/// the write (the jail writes this folder meanwhile) carries nothing
+/// outside the folder: the write goes by the same way as a confined read.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_revert_never_writes_through_a_link_put_in_after_the_check() {
+    let bench = bench();
+    write(&bench.folder, "d/f.txt", b"one\n");
+    let review = review::start(&bench.store, &bench.folder).unwrap();
+    write(&bench.folder, "d/f.txt", b"two\n");
+    let outside = bench.folder.parent().unwrap().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    let folder = bench.folder.clone();
+    let target = outside.clone();
+    review::BEFORE_THE_WRITE.with(|hook| {
+        hook.set(Some(Box::new(move || {
+            std::fs::rename(folder.join("d"), folder.join("d.moved")).unwrap();
+            std::os::unix::fs::symlink(&target, folder.join("d")).unwrap();
+        })))
+    });
+    let reverted = review::revert(&bench.store, &review, "d/f.txt");
+    assert!(reverted.is_err(), "the revert wrote through the link");
+    assert!(
+        std::fs::read_dir(&outside).unwrap().next().is_none(),
+        "something landed outside the folder"
+    );
+}
+
+/// ADR-0140: a secret file is listed, its content never shown.
+#[test]
+fn a_secret_file_is_named_without_its_content() {
+    let bench = bench();
+    write(&bench.folder, ".env", b"TOKEN=before\n");
+    let review = review::start(&bench.store, &bench.folder).unwrap();
+    write(&bench.folder, ".env", b"TOKEN=after\n");
+    let changes = review::changes(&bench.store, &review).unwrap().0;
+    let change = changes
+        .iter()
+        .find(|change| change.path == ".env")
+        .expect("listed");
+    assert!(change.sensitive);
+    assert_eq!(change.diff, None);
+}

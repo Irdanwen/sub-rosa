@@ -6619,5 +6619,6 @@
   "Zoom in": "Zoom in",
   "Zoom out": "Zoom out",
   "This folder's git configuration names a program git would run, or a working tree elsewhere, so Sub Rosa does not run git on it.": "This folder's git configuration names a program git would run, or a working tree elsewhere, so Sub Rosa does not run git on it.",
-  "Git took too long on this folder and was stopped.": "Git took too long on this folder and was stopped."
+  "Git took too long on this folder and was stopped.": "Git took too long on this folder and was stopped.",
+  "Sensitive file: its content is not shown.": "Sensitive file: its content is not shown."
 }

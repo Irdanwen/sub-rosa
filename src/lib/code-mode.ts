@@ -27,6 +27,8 @@ export type FileChange = {
   binary: boolean;
   revertible: boolean;
   truncated: boolean;
+  /** A secret file (`.env`, a key...): named, its content never shown. */
+  sensitive?: boolean;
 };
 
 export type CodeReviewChanges = {

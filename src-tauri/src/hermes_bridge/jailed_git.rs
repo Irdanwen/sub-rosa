@@ -245,14 +245,132 @@ pub(crate) fn build(folder: &Path, sandbox: Option<&Sandbox>, neutral: bool) -> 
         if let Some(found) = places(folder) {
             cmd.env("GIT_WORK_TREE", found.tree);
         }
+        // The person's own excludes file, read as a list of patterns: what
+        // they ignore everywhere (an `.env`) stays ignored here.
+        let excludes = person_excludes_file();
+        let excludes = excludes
+            .as_deref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "/dev/null".to_string());
         cmd.env("GIT_ATTR_SOURCE", EMPTY_TREE)
             .env("GIT_CONFIG_COUNT", NEUTRAL_CONFIG.len().to_string());
         for (index, (key, value)) in NEUTRAL_CONFIG.iter().enumerate() {
+            let value = if *key == "core.excludesFile" {
+                excludes.as_str()
+            } else {
+                value
+            };
             cmd.env(format!("GIT_CONFIG_KEY_{index}"), key)
                 .env(format!("GIT_CONFIG_VALUE_{index}"), value);
         }
     }
     cmd
+}
+
+// Tests only: the home the person's git configuration is read from.
+#[cfg(test)]
+pub(crate) static TEST_HOME: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
+/// The person's global excludes file, found the way git finds it without
+/// running git on the global configuration: `core.excludesFile` read as
+/// text from `$XDG_CONFIG_HOME/git/config` then `~/.gitconfig` (the later
+/// wins), `[include]` files followed as text, `~/` expanded; otherwise the
+/// default `$XDG_CONFIG_HOME/git/ignore`. A conditional include
+/// (`[includeIf]`) depends on the repository and is not followed, nor is a
+/// relative path: then the default applies. `None` when there is no such
+/// file.
+pub(crate) fn person_excludes_file() -> Option<PathBuf> {
+    #[cfg(test)]
+    let home = TEST_HOME
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+        .or_else(|| std::env::var_os("HOME").map(PathBuf::from))?;
+    #[cfg(not(test))]
+    let home = PathBuf::from(std::env::var_os("HOME")?);
+    let config_home = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .unwrap_or_else(|| home.join(".config"));
+    let mut named: Option<PathBuf> = None;
+    for file in [config_home.join("git/config"), home.join(".gitconfig")] {
+        read_excludes_setting(&file, &home, 0, &mut named);
+    }
+    let path = named.unwrap_or_else(|| config_home.join("git/ignore"));
+    let path = std::fs::canonicalize(path).ok()?;
+    std::fs::metadata(&path).ok()?.is_file().then_some(path)
+}
+
+/// Reads `core.excludesFile` from one configuration file as text, following
+/// `[include] path` the same way; nothing is run.
+fn read_excludes_setting(file: &Path, home: &Path, depth: usize, named: &mut Option<PathBuf>) {
+    if depth > 8 {
+        return;
+    }
+    let Ok(text) = std::fs::read_to_string(file) else {
+        return;
+    };
+    let mut section = String::new();
+    for raw in text.lines() {
+        let line = strip_comment(raw).trim().to_string();
+        if let Some(header) = line.strip_prefix('[') {
+            let header = header.trim_end_matches(']').trim();
+            // `[includeIf "..."]` and any other subsection are kept apart.
+            section = if header.contains('"') {
+                String::new()
+            } else {
+                header.to_ascii_lowercase()
+            };
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim().to_ascii_lowercase();
+        let value = value.trim().trim_matches('"').to_string();
+        match (section.as_str(), key.as_str()) {
+            ("core", "excludesfile") => {
+                if let Some(path) = expand_home(&value, home) {
+                    *named = Some(path);
+                }
+            }
+            ("include", "path") => {
+                let included = expand_home(&value, home).or_else(|| {
+                    let relative = Path::new(&value);
+                    (!value.is_empty() && relative.is_relative())
+                        .then(|| file.parent().map(|dir| dir.join(relative)))
+                        .flatten()
+                });
+                if let Some(included) = included {
+                    read_excludes_setting(&included, home, depth + 1, named);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// `~/...` and absolute paths; anything else (relative, `~user`) is not
+/// resolved.
+fn expand_home(value: &str, home: &Path) -> Option<PathBuf> {
+    if let Some(rest) = value.strip_prefix("~/") {
+        return Some(home.join(rest));
+    }
+    let path = Path::new(value);
+    path.is_absolute().then(|| path.to_path_buf())
+}
+
+/// A configuration line without its comment (`#` or `;` outside quotes).
+fn strip_comment(line: &str) -> &str {
+    let mut quoted = false;
+    for (index, ch) in line.char_indices() {
+        match ch {
+            '"' => quoted = !quoted,
+            '#' | ';' if !quoted => return &line[..index],
+            _ => {}
+        }
+    }
+    line
 }
 
 /// Whether a configuration key defines a program git would run that no
@@ -469,6 +587,13 @@ fn render_profile(install: &GitInstall, places: &Places, tmp: &Path, home: &Path
         out.push_str(&format!("  (subpath {})\n", quote(store)));
     }
     out.push_str(&format!("  (subpath {}))\n", quote(tmp)));
+    // The person's excludes file, that file alone.
+    if let Some(excludes) = person_excludes_file() {
+        out.push_str(&format!(
+            "(allow file-read* (literal {}))\n",
+            quote(&excludes)
+        ));
+    }
     out.push_str(&format!("(allow file-write* (subpath {}))\n", quote(tmp)));
     out.push_str("(deny file-read*\n");
     super::sandbox_profile::push_secret_stores(&mut out, home);
@@ -551,6 +676,48 @@ pub(crate) mod planted {
                 );
             }
             assert!(!self.called(), "a planted command reached the network");
+        }
+    }
+
+    /// A home for the person's git configuration, for the time of a test
+    /// (tests that set one take turns).
+    pub(crate) struct FakeHome {
+        pub(crate) dir: tempfile::TempDir,
+        _turn: std::sync::MutexGuard<'static, ()>,
+    }
+
+    static ONE_HOME_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    impl FakeHome {
+        /// A home whose `.gitconfig` includes a file that names the excludes
+        /// file, which holds `patterns`.
+        pub(crate) fn ignoring(patterns: &str) -> FakeHome {
+            let turn = ONE_HOME_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+            let dir = tempfile::tempdir_in(
+                PathBuf::from(std::env::var_os("HOME").unwrap()).join("Library/Caches"),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.path().join(".gitconfig"),
+                "[user]\n\tname = t ; a comment\n[include]\n\tpath = more.cfg\n",
+            )
+            .unwrap();
+            std::fs::write(
+                dir.path().join("more.cfg"),
+                "[core]\n\texcludesFile = \"~/ignores/global\" # where\n",
+            )
+            .unwrap();
+            std::fs::create_dir_all(dir.path().join("ignores")).unwrap();
+            std::fs::write(dir.path().join("ignores/global"), patterns).unwrap();
+            *super::TEST_HOME.lock().unwrap_or_else(|e| e.into_inner()) =
+                Some(dir.path().to_path_buf());
+            FakeHome { dir, _turn: turn }
+        }
+    }
+
+    impl Drop for FakeHome {
+        fn drop(&mut self) {
+            *super::TEST_HOME.lock().unwrap_or_else(|e| e.into_inner()) = None;
         }
     }
 
@@ -1096,6 +1263,40 @@ mod tests {
             line("id_present"),
             line("id_absent"),
             "git told one file elsewhere from the other: {said}"
+        );
+    }
+
+    /// The person's excludes file is found by reading their configuration
+    /// as text, an `[include]` followed, `~/` expanded.
+    #[test]
+    fn the_persons_excludes_file_is_found_as_text() {
+        let home = super::planted::FakeHome::ignoring(".env\n");
+        let found = person_excludes_file().expect("not found");
+        assert_eq!(
+            found,
+            std::fs::canonicalize(home.dir.path().join("ignores/global")).unwrap()
+        );
+    }
+
+    /// What the person ignores everywhere (their global excludes) stays
+    /// ignored by the app's git: a `.env` there is not a new file. The
+    /// control: without it, the `.env` shows.
+    #[test]
+    fn what_the_person_ignores_everywhere_stays_ignored() {
+        let planted = planted_repository(Plant::Neutralized);
+        std::fs::write(planted.repo.join(".env"), "TOKEN=secret\n").unwrap();
+        {
+            let _home = super::planted::FakeHome::ignoring("# mine\n");
+            let shown = run(&planted.repo, &["status", "--porcelain"]).unwrap();
+            assert!(String::from_utf8_lossy(&shown.stdout).contains(".env"));
+        }
+        let _home = super::planted::FakeHome::ignoring(".env\n");
+        let status = run(&planted.repo, &["status", "--porcelain"]).unwrap();
+        let said = String::from_utf8_lossy(&status.stdout);
+        assert!(said.contains("new.txt"), "git did not run: {status:?}");
+        assert!(
+            !said.contains(".env"),
+            "a globally ignored .env showed: {said}"
         );
     }
 
