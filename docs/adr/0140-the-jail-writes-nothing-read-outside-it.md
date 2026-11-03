@@ -806,3 +806,42 @@ What stays open is unchanged otherwise: the clipboard hands Finder a path,
 the network rule names no address, launchd's private protocol, no jail on
 Windows, and `sandbox_check` is a private interface.
 
+## Addendum 2026-11-03: the re-audit (one list, one deadline, a strict barrier)
+
+The re-audit (7.5/10) found no escape and no read of a file the jail
+cannot read, confirmed D1 to D8, and left four points, closed here.
+
+**One list of secret files.** `is_secret_file` checked the new patterns
+but not the exact names and suffixes kept beside them in the same file, so
+the council still sent `id_ecdsa`, `id_dsa`, `secrets.json`,
+`.git-credentials`, `*.pfx`. `SECRET_FILE_PATTERNS` is now the only list,
+for the council, the review, their git pathspecs and the Files panel, with
+`*.env`, `.env-*`, `*.jks`, `*.ppk`, `*.keystore`, `.pgpass`, `secrets.*`
+and `*service-account.json` added, compared without case (the file systems
+of macOS and Windows do not tell case apart). `*.lock` is not a secret and
+stays a Files panel lock only. These files are recognized by their name
+only: a secret copied or hard-linked under a plain name in the working
+folder is not recognized, and its content is read like any other file's.
+
+**One deadline for git and its pipes.** The time limit covered git's exit
+but not its pipes: a process git started that kept stdout open made a call
+last as long as that process (6 s for a 1 s limit, measured by the
+re-audit). Now one deadline covers both; past it, git's process group is
+killed and the pipes are not waited on.
+
+**The person's configuration read confined.** The person's git
+configuration files were read with a plain read on every git call: a named
+pipe they include would have blocked it. They are now read through the
+confined reader (a regular file of a bounded size; a pipe answers at once),
+after resolving the path (the person's `~/.gitconfig` may be a link to
+their dotfiles, and the jail cannot write it), and the excludes file is
+found once per start.
+
+**The reaper's barrier strict again.** To let `jailed_git` stop its own
+git in tests, the barrier had been widened to any process descending from
+the test process. That is withdrawn: the barrier again lets through only
+what the test registered. A separate entry, `killpg_child`, takes the
+`Child` the caller spawned and holds and signals that child's own process
+group and nothing else; `jailed_git` uses it for its time limit, the
+reaper never does.
+
