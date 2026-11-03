@@ -67,6 +67,7 @@ export function recordSessionHome(sessionId: string, unrestricted: boolean): Pro
   return pending.then(
     () => undefined,
     (error: unknown) => {
+      // biome-ignore lint/suspicious/noConsole: the only trace of a failed record, the background caller swallows it
       console.error(`Could not record where the session ${sessionId} lives:`, error);
       throw error;
     },

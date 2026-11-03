@@ -464,8 +464,7 @@ struct HermesRuntimeOwnershipRecord {
     runtime_pid: u32,
     runtime_start: String,
     full_mode: bool,
-    /// The mark a jailed runtime's processes carry (`jail_reaper`), so a
-    /// later start can stop them too.
+    /// The jailed runtime's mark (`jail_reaper`), for a later start to reap.
     #[serde(default)]
     jail_mark: Option<String>,
 }
