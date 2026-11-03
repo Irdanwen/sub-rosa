@@ -162,6 +162,69 @@ describe("the web client's agent loop", () => {
     });
   });
 
+  // Carpe Diem tells a failure after the 200 inside the stream, in OpenAI's
+  // envelope, then [DONE]: that is an error, never an empty or short answer.
+  it("reads an error told inside the stream as the refusal it is", async () => {
+    const sse = (...frames: unknown[]) => ({
+      root: "https://operator.test",
+      fetch: async () =>
+        new Response(
+          `${frames.map((f) => `data: ${typeof f === "string" ? f : JSON.stringify(f)}\n\n`).join("")}`,
+          { status: 200, headers: { "content-type": "text/event-stream" } },
+        ),
+    });
+    const shown: string[] = [];
+    await expect(
+      streamCompletion(
+        sse(
+          { choices: [{ delta: { content: "Half" } }] },
+          {
+            error: {
+              message: "Payment rail cannot cover this request",
+              type: "insufficient_quota",
+              code: "PAYMENT_REQUIRED",
+              param: null,
+            },
+          },
+          "[DONE]",
+        ),
+        "cdm_test",
+        {},
+        (t) => shown.push(t),
+      ),
+    ).rejects.toMatchObject({
+      code: "PAYMENT_REQUIRED",
+      status: 402,
+      message: "Payment rail cannot cover this request",
+    });
+    expect(shown).toEqual(["Half"]);
+    await expect(
+      streamCompletion(
+        sse(
+          {
+            error: {
+              message: "No market could serve this request",
+              type: "server_error",
+              code: "NO_MARKET",
+            },
+          },
+          "[DONE]",
+        ),
+        "cdm_test",
+        {},
+        () => undefined,
+      ),
+    ).rejects.toMatchObject({ code: "NO_MARKET", status: 502 });
+    await expect(
+      streamCompletion(
+        sse({ error: { message: "slow down", type: "rate_limit_error" } }, "[DONE]"),
+        "cdm_test",
+        {},
+        () => undefined,
+      ),
+    ).rejects.toMatchObject({ code: "stream_error", status: 429 });
+  });
+
   it("renders personalization in the app's words and reads cards aloud by name", () => {
     expect(personalizationBlock(DEFAULT_PERSONALIZATION)).toBeNull();
     const block = personalizationBlock({
