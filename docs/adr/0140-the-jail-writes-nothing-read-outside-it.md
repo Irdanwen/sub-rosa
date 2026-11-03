@@ -764,3 +764,45 @@ show as changed) and files ignored only by the global excludes file show
 as new, which the council reads and sends to its seats. Trust in the
 reaper rests on `sandbox_check`, a private interface.
 
+## Addendum 2026-11-03: the person's ignores, secret files, and the revert's write
+
+Two points the addendum above left open, closed in the same lot.
+
+**The person's global excludes (a regression of this lot).** The app's git
+stopped reading the person's global configuration, so a file ignored only
+by their global excludes (an `.env`) showed as new, and the council read
+it and sent it to its seats. Two independent layers now:
+
+- The app's git reads the person's excludes file again, as a list of
+  patterns. Its path is found without running git on the global
+  configuration: `core.excludesFile` read as text from
+  `$XDG_CONFIG_HOME/git/config`, then `~/.gitconfig` (the later wins),
+  each `[include] path` followed as text, `~/` expanded; otherwise the
+  default `$XDG_CONFIG_HOME/git/ignore`. It is passed as the command's
+  `core.excludesFile`, and git's profile may read that file and no other.
+  What cannot be resolved this way is said, not guessed: an
+  `[includeIf]` (it depends on the repository) is not followed, and a
+  relative path or `~user` is not resolved; then the default applies.
+- Whatever git says, the council and the review never send a secret
+  file's content: `path_confinement::SECRET_FILE_PATTERNS` (`.env`,
+  `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `*.p12`, `.npmrc`,
+  `.pypirc`, `.netrc`, `credentials*`) and anything in a credential
+  folder (`.ssh`, `.aws`...). The council leaves them out of its diff and
+  its stat (git pathspecs built from the same list) and names them
+  "content not sent: sensitive file"; the review lists them with no diff.
+  The list lives in one place, with the Files panel's, for later reuse.
+
+**The revert's write.** The code review's revert checked the file and its
+folder, then wrote through paths: a folder on the way replaced by a link
+in between would have carried the write elsewhere. It now writes the way a
+confined read reads (`confined_read::write_beneath`): every folder on the
+way opened without following a link (made when missing), the bytes written
+to a new file beside the target, renamed over it within that folder; a
+link at the name or on the way refuses the write. Removing a file goes the
+same way. Tested with a folder replaced by a link between the checks and
+the write: nothing lands outside.
+
+What stays open is unchanged otherwise: the clipboard hands Finder a path,
+the network rule names no address, launchd's private protocol, no jail on
+Windows, and `sandbox_check` is a private interface.
+
