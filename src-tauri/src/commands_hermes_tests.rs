@@ -2,6 +2,10 @@
 //! (ADR-0140): the jail cannot forge, in its home, a conversation that an
 //! unrestricted task would take for its own.
 
+// Test code throughout (the module is `#[cfg(all(test, desktop))]`, which
+// the `allow-unwrap-in-tests` setting does not recognize).
+#![allow(clippy::unwrap_used)]
+
 use crate::db::repositories::Repositories;
 use crate::hermes_bridge::session_owner::{record_task_home, Owner};
 
