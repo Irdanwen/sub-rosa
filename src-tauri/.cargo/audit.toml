@@ -17,13 +17,23 @@ ignore = [
   # private-key operations, which a verifier does not perform. Revisit if the
   # backend ever signs with RSA, or when jsonwebtoken's backend moves off rsa.
   "RUSTSEC-2023-0071",
-  # zip 4 (RUSTSEC-2026-0367, -0368, -0369: symlinks and permission bits on
-  # extraction), reached only through tauri-plugin-updater, which asks for
-  # zip ^4 on Windows up to 2.14.0. It extracts only an update it downloaded
-  # from this app's release feed, after the minisign signature check passed,
-  # so no archive an attacker shaped reaches the extraction. The app's own
-  # zip is 9, which fixes all three. Drop these when the updater moves on.
-  "RUSTSEC-2026-0367",
-  "RUSTSEC-2026-0368",
-  "RUSTSEC-2026-0369",
+  # crypto-bigint 0.5.5 (RUSTSEC-2026-0387: secret-dependent branches in
+  # arithmetic meant to be constant-time). The fix exists only in 0.7.6 and
+  # later. 0.5 comes with elliptic-curve 0.13, through p256/p384 0.13, from
+  # age 0.12.1 (and its hpke 0.12) and jsonwebtoken 11.1.0 (via june-embed).
+  # The newest releases of both still ask for p256 0.13, so no lockfile update
+  # reaches the fix. A timing leak needs a secret operand, and none reaches
+  # this code here:
+  # - the archive (`archive.rs`) uses age's scrypt recipient and identity
+  #   only. P-256 serves age's `tag`/`tagpq` recipients, which this app never
+  #   builds, and age has no identity for them, so decrypting an imported
+  #   archive never runs P-256 arithmetic, whatever stanzas it carries;
+  # - jsonwebtoken only verifies ES256 signatures (`june-providers/src/
+  #   jwks.rs`, dead here since ADR-0017 deleted OS Accounts). A verification
+  #   handles the token, the signature and the public key, all public. Signing
+  #   appears in tests only, with a fixture key.
+  # Our own P-256 (p256 0.14, with crypto-bigint 0.7.10) is on the fixed line.
+  # Review on 2027-02-01, or drop this entry as soon as age and jsonwebtoken
+  # move to p256 0.14.
+  "RUSTSEC-2026-0387",
 ]
