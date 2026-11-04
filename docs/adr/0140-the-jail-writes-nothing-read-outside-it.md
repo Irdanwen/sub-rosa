@@ -888,3 +888,20 @@ in, so no `network-inbound` rule is needed.
 
 **And two secret names** (the auditor's): `*.tfvars` and `.htpasswd`.
 
+**And the reaper on a loaded or different machine (CI, #479).** Two mark
+sweeps found their carrier on the CI runner and stopped nothing. The cause,
+measured locally: in its first milliseconds a process spawned by
+`sandbox-exec` is not under the jail yet (the profile is applied after the
+process starts, then a shim execs into its program, under the same pid and
+start time), and the sweep kept its first "no" for the whole sweep. On the
+runner the mark was visible in that window, so the sweep asked then, and
+never again. A "no" about a process younger than a second is now asked
+again on the next pass; a settled process's "no" is kept, so passes stay
+fast enough for a process that forks in a loop. A second defect, found on
+the way and not the CI's cause (the failing sweep lasted well under the
+deadline): a pass that outlasted the five-second deadline (a loaded
+machine) ended the sweep before freezing what it had found. The deadline
+is now checked after the pass's finds are frozen: it makes a sweep
+shorter, never more permissive. Both have a deterministic test, proved by
+mutation.
+
