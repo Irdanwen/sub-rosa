@@ -149,6 +149,41 @@ pub(super) fn reap_an_earlier_run(mark: Option<&str>) {
 #[cfg(target_os = "macos")]
 const SWEEP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// How long after its start a process keeps what it is: past it, a no
+/// about it is kept for the rest of the sweep.
+#[cfg(target_os = "macos")]
+const SETTLED: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Whether a process that started at `started` is older than `SETTLED`.
+#[cfg(target_os = "macos")]
+fn settled(started: StartTime) -> bool {
+    let start = std::time::UNIX_EPOCH
+        + std::time::Duration::from_secs(started.0)
+        + std::time::Duration::from_micros(started.1);
+    std::time::SystemTime::now()
+        .duration_since(start)
+        .is_ok_and(|age| age >= SETTLED)
+}
+
+/// The deadline, which a test may shorten.
+#[cfg(target_os = "macos")]
+fn sweep_deadline() -> std::time::Duration {
+    #[cfg(test)]
+    if let Some(deadline) = TEST_DEADLINE.with(|deadline| deadline.get()) {
+        return deadline;
+    }
+    SWEEP_DEADLINE
+}
+
+// Tests only: a shorter deadline, and a slow pass (a loaded machine).
+#[cfg(all(test, target_os = "macos"))]
+thread_local! {
+    static TEST_DEADLINE: std::cell::Cell<Option<std::time::Duration>> =
+        const { std::cell::Cell::new(None) };
+    static SLOW_PASS: std::cell::Cell<std::time::Duration> =
+        const { std::cell::Cell::new(std::time::Duration::ZERO) };
+}
+
 /// Passes in a row that find nothing new before a sweep ends.
 #[cfg(target_os = "macos")]
 const QUIET_PASSES: u32 = 4;
@@ -278,11 +313,18 @@ fn read_pass(
         let wanted = linked.initial.contains(&pid)
             || linked.frozen_pids.contains(&seen.parent)
             || linked.frozen_groups.contains(&seen.group)
+            // A process can become the jail's just after it starts
+            // (`sandbox-exec` applies the profile, a shim execs into its
+            // program, under the same pid and start time): a no about a
+            // process younger than `SETTLED` is asked again on the next pass
+            // (measured on CI: a carrier asked too early was never stopped).
             || match answers.get(&key) {
                 Some(answer) => *answer,
                 None => {
                     let (answer, still) = ask(pid, seen);
-                    answers.insert(key, answer);
+                    if answer || settled(seen.started) {
+                        answers.insert(key, answer);
+                    }
                     pass.unsure |= !still;
                     answer
                 }
@@ -368,12 +410,15 @@ fn sweep(initial: Vec<u32>, mark: Option<&str>, orphans: bool, floor: Option<Sta
             },
         );
         first = false;
-        if started.elapsed() > SWEEP_DEADLINE {
-            break;
-        }
+        #[cfg(test)]
+        std::thread::sleep(SLOW_PASS.with(|slow| slow.get()));
+        // Past the deadline the sweep ends, but never before freezing what
+        // this pass found: a deadline passed makes a sweep shorter, never
+        // more permissive.
+        let deadline_passed = started.elapsed() > sweep_deadline();
         if pass.is_quiet() {
             quiet += 1;
-            if quiet >= QUIET_PASSES {
+            if quiet >= QUIET_PASSES || deadline_passed {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(15));
@@ -403,6 +448,9 @@ fn sweep(initial: Vec<u32>, mark: Option<&str>, orphans: bool, floor: Option<Sta
                 frozen.insert((pid, seen.started));
                 frozen_pids.insert(pid);
             }
+        }
+        if deadline_passed {
+            break;
         }
         #[cfg(test)]
         std::thread::sleep(PAUSE_BETWEEN_PASSES.with(|pause| pause.get()));
@@ -570,12 +618,14 @@ fn orphan_of_the_jail(
     let (mut pid, mut seen) = (pid, seen);
     for _ in 0..64 {
         let key = (pid, seen.started);
+        // A no about a process that just started is asked again (it may
+        // be under the jail on the next pass), and nothing is kept about a
+        // process that ended while asked.
         let under = match jailed.get(&key) {
             Some(under) => *under,
             None => {
                 let under = runs_under_the_jail(pid);
-                // Not kept about a process that ended while asked.
-                if same_process(pid, seen.started) {
+                if (under || settled(seen.started)) && same_process(pid, seen.started) {
                     jailed.insert(key, under);
                 }
                 under
@@ -1672,6 +1722,123 @@ mod tests {
             "aimed at a process outside the jail: {aimed:?}"
         );
         assert!(jailed_hit, "the jailed carrier was not stopped");
+    }
+
+    /// A no is asked again on the next pass: a process may become the
+    /// jail's after it was first asked about (`sandbox-exec` applies its
+    /// profile, a shim execs into its program, under the same pid and
+    /// start time). Measured on CI: a carrier asked too early was never
+    /// stopped. Deterministic: the question is answered by a stand-in.
+    #[test]
+    fn a_no_is_asked_again() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap();
+        let young = (now.as_secs(), u64::from(now.subsec_micros()));
+        let table = [(
+            4242,
+            Seen {
+                parent: 1,
+                group: 4242,
+                started: young,
+                status: 2,
+                uid: 501,
+            },
+        )];
+        let (frozen, frozen_pids, frozen_groups) = Default::default();
+        let belt = Belt {
+            own: 1000,
+            ancestors: Default::default(),
+            uid: 501,
+            floor: Some((0, 0)),
+        };
+        let spared = Default::default();
+        let linked = Linked {
+            own: 1000,
+            belt: &belt,
+            spared: &spared,
+            initial: &[],
+            frozen: &frozen,
+            frozen_pids: &frozen_pids,
+            frozen_groups: &frozen_groups,
+        };
+        let mut answers = HashMap::new();
+        let first = read_pass(&table, &linked, &mut answers, &mut |_, _| (false, true));
+        assert!(first.fresh.is_empty());
+        let then = read_pass(&table, &linked, &mut answers, &mut |_, _| (true, true));
+        assert_eq!(then.fresh.len(), 1, "a no was kept");
+        // A settled process's no is kept: passes stay fast.
+        let old = [(
+            4343,
+            Seen {
+                started: (1, 2),
+                ..table[0].1
+            },
+        )];
+        let mut asked = 0;
+        for _ in 0..2 {
+            read_pass(&old, &linked, &mut answers, &mut |_, _| {
+                asked += 1;
+                (false, true)
+            });
+        }
+        assert_eq!(asked, 1);
+        // And the orphan question the same way.
+        let mut sleeper = std::process::Command::new("/bin/sleep");
+        sleeper.arg("5");
+        let mut sleeper = sleeper.spawn().unwrap();
+        let mut jailed = HashMap::new();
+        let found = seen(sleeper.id()).unwrap();
+        assert!(!orphan_of_the_jail(sleeper.id(), found, &mut jailed));
+        FAKE_UNDER.with(|fake| fake.set(true));
+        let now = orphan_of_the_jail(sleeper.id(), found, &mut jailed);
+        FAKE_UNDER.with(|fake| fake.set(false));
+        let _ = sleeper.kill();
+        let _ = sleeper.wait();
+        assert!(now, "a no about the jail's profile was kept");
+    }
+
+    /// A pass that outlasts the deadline (a loaded machine) still freezes
+    /// what it found: a deadline passed makes a sweep shorter, never more
+    /// permissive. Deterministic: a short deadline and a slow pass.
+    #[test]
+    fn a_slow_pass_past_the_deadline_still_freezes_what_it_found() {
+        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let mark = new_mark();
+        let mut carrier = jailed_python();
+        carrier
+            .args(["-I", "-c", "import time\ntime.sleep(120)\n"])
+            .env_clear()
+            .env(JAIL_MARK_ENV, &mark)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        super::super::sandbox_profile::own_session(&mut carrier);
+        let mut carrier = carrier.spawn().unwrap();
+        let _guard = LoopGuard::new(carrier.id(), &mark);
+        let needle = mark_needle(&mark);
+        for _ in 0..60 {
+            if environment_carries(carrier.id(), &needle) && runs_under_the_jail(carrier.id()) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        TEST_DEADLINE.with(|deadline| deadline.set(Some(std::time::Duration::from_millis(100))));
+        SLOW_PASS.with(|slow| slow.set(std::time::Duration::from_millis(300)));
+        reap_mark(&mark);
+        TEST_DEADLINE.with(|deadline| deadline.set(None));
+        SLOW_PASS.with(|slow| slow.set(std::time::Duration::ZERO));
+        let mut gone = false;
+        for _ in 0..40 {
+            if carrier.try_wait().unwrap().is_some() {
+                gone = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let _ = carrier.kill();
+        let _ = carrier.wait();
+        assert!(gone, "what a slow pass found was let go at the deadline");
     }
 
     /// Kills a looping test process for good, whatever the test's outcome:
