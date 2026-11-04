@@ -69,6 +69,9 @@ pub const SECRET_FILE_PATTERNS: &[&str] = &[
     "secrets.*",
     "auth.lock",
     "keychain-db",
+    // Infrastructure and web server secrets.
+    "*.tfvars",
+    ".htpasswd",
 ];
 
 /// Not secrets, but never opened on the person's behalf either: a lock the
@@ -457,6 +460,10 @@ mod tests {
             "keychain-db",
             ".ENV",
             "Prod.ENV",
+            "terraform.tfvars",
+            "infra/prod.auto.tfvars",
+            ".htpasswd",
+            "site/.htpasswd",
         ] {
             assert!(is_secret_file(Path::new(name)), "{name}");
         }

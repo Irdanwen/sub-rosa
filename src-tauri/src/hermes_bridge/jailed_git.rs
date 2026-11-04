@@ -439,9 +439,9 @@ pub(crate) fn names_a_program(key: &str) -> bool {
 
 /// Lists the configuration git would read in `folder` (includes followed),
 /// and refuses the folder when it defines a program (`names_a_program`) or
-/// names a working tree other than the one the app found. A folder git
-/// cannot read the configuration of is left to the command itself, which
-/// fails the same way.
+/// names a working tree other than the one the app found. It fails
+/// closed: a configuration git cannot list (unreadable, invalid) refuses
+/// the folder too, since what it would hold is unknown.
 pub(crate) fn refuse_planted_programs(
     folder: &Path,
     sandbox: Option<&Sandbox>,
@@ -451,7 +451,14 @@ pub(crate) fn refuse_planted_programs(
     cmd.args(["config", "--list", "-z"]);
     let output = output_within(cmd, timeout)?;
     if !output.status.success() {
-        return Ok(());
+        eprintln!(
+            "git: refused {} (its configuration could not be listed)",
+            folder.display()
+        );
+        return Err(AppError::new(
+            "git_unsafe_folder",
+            "This folder's git configuration names a program git would run, or a working tree elsewhere, so Sub Rosa does not run git on it.",
+        ));
     }
     let tree = places(folder).map(|found| found.tree);
     for entry in output.stdout.split(|byte| *byte == 0) {
@@ -1372,6 +1379,38 @@ mod tests {
             !said.contains(".env"),
             "a globally ignored .env showed: {said}"
         );
+    }
+
+    /// The check fails closed: a configuration git cannot list (invalid, or
+    /// unreadable) refuses the folder.
+    #[test]
+    fn a_configuration_git_cannot_list_refuses_the_folder() {
+        let invalid = planted_repository(Plant::Neutralized);
+        let config = invalid.repo.join(".git/config");
+        let mut text = std::fs::read_to_string(&config).unwrap();
+        text.push_str("[core\n\tbroken = = =\n");
+        std::fs::write(&config, text).unwrap();
+        let refused = run(&invalid.repo, &["status", "--porcelain"]).expect_err("not refused");
+        assert_eq!(refused.code, "git_unsafe_folder");
+        let unreadable = planted_repository(Plant::Neutralized);
+        let included = unreadable.repo.join(".git/more.cfg");
+        std::fs::write(&included, "[core]\n").unwrap();
+        std::fs::set_permissions(
+            &included,
+            std::os::unix::fs::PermissionsExt::from_mode(0o000),
+        )
+        .unwrap();
+        let config = unreadable.repo.join(".git/config");
+        let mut text = std::fs::read_to_string(&config).unwrap();
+        text.push_str("[include]\n\tpath = more.cfg\n");
+        std::fs::write(&config, text).unwrap();
+        let refused = run(&unreadable.repo, &["status", "--porcelain"]);
+        std::fs::set_permissions(
+            &included,
+            std::os::unix::fs::PermissionsExt::from_mode(0o600),
+        )
+        .unwrap();
+        assert_eq!(refused.expect_err("not refused").code, "git_unsafe_folder");
     }
 
     /// The profile is an argument of each call: calls at once all run.

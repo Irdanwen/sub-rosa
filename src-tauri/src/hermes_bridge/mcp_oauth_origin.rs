@@ -11,8 +11,10 @@
 //! never the raw text. The server comes from the app's own record of the
 //! person's settings, never from a file the jail writes. A local or private
 //! address (`http`, a loopback or private IP) is accepted only when it is
-//! the configured server's own host and port. Anything else is shown to the
-//! person, who decides.
+//! the configured server's own host and port, and never for a sign-in run
+//! from the jail: a jailed process listening on that local port could answer
+//! as the server and vouch for an address of its choosing (fourth review).
+//! Anything else is shown to the person, who decides.
 
 use std::collections::HashSet;
 use std::future::Future;
@@ -48,14 +50,16 @@ pub(super) async fn openable_authorization_url(
     any_home: &Path,
     server: &str,
     auth_url: &str,
+    jailed: bool,
 ) -> Option<String> {
-    openable_authorization_url_with(any_home, server, auth_url, system_lookup).await
+    openable_authorization_url_with(any_home, server, auth_url, jailed, system_lookup).await
 }
 
 async fn openable_authorization_url_with(
     any_home: &Path,
     server: &str,
     auth_url: &str,
+    jailed: bool,
     lookup: Lookup,
 ) -> Option<String> {
     let settings = admin_settings::load(any_home);
@@ -66,6 +70,11 @@ async fn openable_authorization_url_with(
         .and_then(|entry| entry.get("url"))
         .and_then(Value::as_str)
         .and_then(parse_strict)?;
+    // From the jail, a local or private server never vouches for itself
+    // (nor for the addresses its metadata declares): the person decides.
+    if jailed && serves_locally(&server_url, lookup).await {
+        return None;
+    }
     let wanted = parse_strict(auth_url)?;
     vetted(&wanted, &server_url, lookup).await?;
     allowed_origins(&server_url, lookup)
@@ -159,6 +168,23 @@ fn parse_strict(raw: &str) -> Option<Url> {
         return None;
     }
     Some(url)
+}
+
+/// Whether `url` is local by its text or by any address it resolves to (a
+/// name that resolves to none is taken as local).
+async fn serves_locally(url: &Url, lookup: Lookup) -> bool {
+    if is_local(url) {
+        return true;
+    }
+    let (Some(host), Some(port)) = (url.host_str(), url.port_or_known_default()) else {
+        return true;
+    };
+    let host = host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_string();
+    let addresses = lookup(host, port).await;
+    addresses.is_empty() || addresses.iter().any(|address| ip_is_local(address.ip()))
 }
 
 /// `scheme://host[:port]`.
@@ -466,7 +492,7 @@ mod tests {
             ("https://login.example.test\\@evil.test/".to_string(), None),
         ] {
             assert_eq!(
-                openable_authorization_url_with(&home, "linear", &url, test_lookup).await,
+                openable_authorization_url_with(&home, "linear", &url, false, test_lookup).await,
                 opened,
                 "{url}"
             );
@@ -476,6 +502,7 @@ mod tests {
                 &home,
                 "unknown",
                 "https://login.example.test/a",
+                false,
                 test_lookup
             )
             .await,
@@ -487,5 +514,56 @@ mod tests {
             .unwrap()
             .iter()
             .all(|line| line.starts_with("GET /.well-known/")));
+    }
+
+    /// Fourth review: for a sign-in run from the jail, a local server never
+    /// vouches for itself or for what its metadata declares: a jailed
+    /// process listening on its port could be answering. Every address is
+    /// shown to the person; a public server still vouches as before.
+    #[tokio::test]
+    async fn from_the_jail_a_local_server_vouches_for_nothing() {
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let port = metadata_server(asked.clone());
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("hermes");
+        std::fs::create_dir_all(&home).unwrap();
+        let mut settings = admin_settings::load(&home);
+        settings.config.mcp_servers.insert(
+            "linear".to_string(),
+            serde_json::json!({"url": format!("http://127.0.0.1:{port}/mcp")}),
+        );
+        settings.config.mcp_servers.insert(
+            "private".to_string(),
+            serde_json::json!({"url": "https://private.example.test/mcp"}),
+        );
+        admin_settings::save(&home, &settings).unwrap();
+        let local = format!("http://127.0.0.1:{port}/authorize?x=1");
+        // Outside the jail, the person's local server vouches for itself.
+        assert_eq!(
+            openable_authorization_url_with(&home, "linear", &local, false, test_lookup).await,
+            Some(local.clone())
+        );
+        for url in [
+            local.clone(),
+            "https://login.example.test/authorize?client_id=x".to_string(),
+        ] {
+            assert_eq!(
+                openable_authorization_url_with(&home, "linear", &url, true, test_lookup).await,
+                None,
+                "{url}"
+            );
+        }
+        // A name that resolves to a private address is local too.
+        assert_eq!(
+            openable_authorization_url_with(
+                &home,
+                "private",
+                "https://private.example.test/authorize",
+                true,
+                test_lookup
+            )
+            .await,
+            None
+        );
     }
 }

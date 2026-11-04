@@ -1201,6 +1201,7 @@ async fn start_hermes_bridge_inner(
             agent_cli_access,
             custom_working_dir.as_deref(),
             &[provider_proxy.port, port],
+            &[port],
         )
     };
     sandbox_profile::prepare_reader(app, &hermes_home);
@@ -3781,9 +3782,10 @@ pub async fn hermes_mcp_oauth_login(
     // Only an address on the server's own origin, or one its metadata
     // declares, opens by itself; any other is shown to the person (ADR-0140).
     let mut auth_url_unverified = false;
+    let jailed = jail.is_some();
     if let Some(url) = auth_url.as_deref() {
         let home = home_split::shared_home(Path::new(&connection.hermes_home));
-        match mcp_oauth_origin::openable_authorization_url(&home, &server, url).await {
+        match mcp_oauth_origin::openable_authorization_url(&home, &server, url, jailed).await {
             Some(checked) => open_url_in_browser(&checked),
             None => auth_url_unverified = true,
         }
@@ -5553,6 +5555,7 @@ pub async fn open_hermes_tui_debug(
             agent_cli_access,
             working_dir.as_deref(),
             &[proxy_port],
+            &[],
         )
     };
     let sandbox_available = if full_mode {

@@ -28,6 +28,7 @@ fn grants<'a>(
         result_dir: None,
         jail_tmp: temp_roots.first().map(PathBuf::as_path),
         loopback_ports: &[4242],
+        listen_ports: &[],
     }
 }
 
@@ -242,6 +243,8 @@ pub(super) struct KernelJail {
     pub profile_path: PathBuf,
     /// The one loopback port its profile lets it reach.
     pub loopback_port: u16,
+    /// The one loopback port its profile lets it listen on.
+    pub listen_port: u16,
 }
 
 impl KernelJail {
@@ -277,6 +280,12 @@ impl KernelJail {
             .local_addr()
             .ok()?
             .port();
+        // One port it may listen on (its own dashboard's, in the app).
+        let listen_port = std::net::TcpListener::bind("127.0.0.1:0")
+            .ok()?
+            .local_addr()
+            .ok()?
+            .port();
         let profile = build_sandbox_profile(&SandboxGrants {
             home: &root,
             hermes_home: &hermes_home,
@@ -288,6 +297,7 @@ impl KernelJail {
             result_dir: None,
             jail_tmp: Some(&jail_tmp),
             loopback_ports: &[loopback_port],
+            listen_ports: &[listen_port],
         });
         let profile_path = root.join("profile.sb");
         std::fs::write(&profile_path, profile).ok()?;
@@ -299,6 +309,7 @@ impl KernelJail {
             runtime_dir,
             profile_path,
             loopback_port,
+            listen_port,
         })
     }
 
@@ -974,6 +985,7 @@ fn the_runtime_cannot_write_the_readers_answers() {
                 result_dir,
                 jail_tmp: None,
                 loopback_ports: &[],
+                listen_ports: &[],
             }),
         )
         .unwrap();
@@ -1191,6 +1203,7 @@ fn no_grant_is_ever_left_empty() {
         result_dir: None,
         jail_tmp: None,
         loopback_ports: &[],
+        listen_ports: &[],
     });
     let lines: Vec<&str> = profile.lines().map(str::trim).collect();
     for (index, line) in lines.iter().enumerate() {
@@ -1367,6 +1380,45 @@ fn no_datagram_leaves_the_jail() {
     assert!(!said.contains("SENT"), "{said}");
     assert!(said.contains("NAMES"), "{said}");
     assert!(!received, "a datagram reached a listener of this machine");
+}
+
+/// Fourth review: the jail listens only on the port the app gave it (its
+/// dashboard's), never on another loopback port, where it could pose as the
+/// person's local MCP server or the app's proxy; its own unix sockets still
+/// work.
+#[test]
+fn the_jail_listens_only_on_its_own_port() {
+    let Some(jail) = KernelJail::new(false, None) else {
+        return;
+    };
+    let other = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let probe = format!(
+        "import socket, os\nfor host, port in (('127.0.0.1', {own}), ('127.0.0.1', {other}), ('127.0.0.1', {proxy}), ('0.0.0.0', {other})):\n    s = socket.socket()\n    try:\n        s.bind((host, port)); s.listen(1); print('BOUND', port)\n    except OSError:\n        print('refused', port)\n    s.close()\nu = socket.socket(socket.AF_UNIX)\nu.bind(os.path.join(os.environ['TMPDIR'], 's'))\nprint('UNIX')\n",
+        own = jail.listen_port,
+        proxy = jail.loopback_port,
+    );
+    let out = Command::new(SANDBOX_EXEC_PATH)
+        .arg("-f")
+        .arg(&jail.profile_path)
+        .args(["/usr/bin/python3", "-I", "-c", &probe])
+        .env("TMPDIR", jail.root.join("jail-tmp"))
+        .output()
+        .expect("run the listening probe");
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        said.contains(&format!("BOUND {}", jail.listen_port)),
+        "{said}"
+    );
+    assert!(!said.contains(&format!("BOUND {other}")), "{said}");
+    assert!(
+        !said.contains(&format!("BOUND {}", jail.loopback_port)),
+        "{said}"
+    );
+    assert!(said.contains("UNIX"), "{said}");
 }
 
 /// Final pass: the marker is proper to an installation, so the installed

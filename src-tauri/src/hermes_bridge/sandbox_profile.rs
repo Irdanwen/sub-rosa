@@ -113,6 +113,10 @@ pub(super) struct SandboxGrants<'a> {
     /// The loopback ports the jail may connect to (ADR-0140, H2): the app's
     /// proxy, the runtime's own dashboard, local MCP servers the person set.
     pub loopback_ports: &'a [u16],
+    /// The loopback ports the jail may listen on: the runtime's own
+    /// dashboard, nothing else (a jail listening on a port the person's MCP
+    /// server or the app's proxy would answer could pose as it).
+    pub listen_ports: &'a [u16],
 }
 
 /// The temp folders the jail may write (ADR-0140, H1): its own and no other.
@@ -453,6 +457,7 @@ pub(super) fn prepare(
     agent_cli_access: bool,
     working_dir: Option<&std::path::Path>,
     loopback_ports: &[u16],
+    listen_ports: &[u16],
 ) -> Option<std::path::PathBuf> {
     let mut ports = loopback_ports.to_vec();
     ports.extend(local_mcp_ports(hermes_home));
@@ -462,7 +467,7 @@ pub(super) fn prepare(
         agent_cli_access,
         working_dir,
         None,
-        &ports,
+        (&ports, listen_ports),
         RUNTIME_PROFILE_FILE,
     )
 }
@@ -514,7 +519,7 @@ pub(super) fn prepare_reader(app: &tauri::AppHandle, any_home: &std::path::Path)
         false,
         None,
         Some(&results),
-        &ports,
+        (&ports, &[]),
         READER_PROFILE_FILE,
     );
 }
@@ -599,7 +604,7 @@ fn write_profile(
     agent_cli_access: bool,
     working_dir: Option<&Path>,
     result_dir: Option<&Path>,
-    loopback_ports: &[u16],
+    (loopback_ports, listen_ports): (&[u16], &[u16]),
     file_name: &str,
 ) -> Option<PathBuf> {
     // The caller logs the sandboxed/unsandboxed outcome; this only short-circuits.
@@ -639,6 +644,7 @@ fn write_profile(
         result_dir,
         jail_tmp: jail_tmp.as_deref(),
         loopback_ports,
+        listen_ports,
     });
     let app_data_dir = crate::app_paths::app_data_dir(app).ok()?;
     if std::fs::create_dir_all(&app_data_dir).is_err() {
@@ -661,7 +667,7 @@ fn write_profile(
     _agent_cli_access: bool,
     _working_dir: Option<&std::path::Path>,
     _result_dir: Option<&std::path::Path>,
-    _loopback_ports: &[u16],
+    _ports: (&[u16], &[u16]),
     _file_name: &str,
 ) -> Option<std::path::PathBuf> {
     None
@@ -763,6 +769,16 @@ fn push_unix_socket_rules(out: &mut String, grants: &SandboxGrants<'_>) {
             out.push_str(&format!("  (remote ip \"localhost:{port}\")\n"));
         }
         out.push_str(")\n");
+    }
+    // Listening (fourth review): only on the ports the app gave it to serve,
+    // and on its own unix sockets. Measured: `(deny network-bind)` then an
+    // allow by port keeps that port alone (a `(local ip "*:*")` deny also
+    // refuses the allowed one), and with nothing bound nothing comes in.
+    out.push_str("(deny network-bind)\n(allow network-bind (local unix-socket))\n");
+    for port in grants.listen_ports {
+        out.push_str(&format!(
+            "(allow network-bind (local ip \"localhost:{port}\"))\n"
+        ));
     }
     out.push('\n');
 }

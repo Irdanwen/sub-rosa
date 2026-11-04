@@ -772,6 +772,10 @@ pub struct CreateAgentTaskRequest {
     /// empty leaves it NULL so the app default applies.
     #[serde(default)]
     pub model: Option<String>,
+    /// The mode the task runs in, when the caller knows it: its conversation
+    /// is matched in that mode's home only (ADR-0140).
+    #[serde(default)]
+    pub unrestricted: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

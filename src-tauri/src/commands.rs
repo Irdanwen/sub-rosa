@@ -339,6 +339,8 @@ pub async fn create_agent_task(
             request.model.as_deref(),
         )
         .await?;
+    #[cfg(desktop)]
+    crate::hermes_bridge::session_owner::remember_task_home(&app, &task.id, request.unrestricted);
     if request.run_placeholder.unwrap_or(true) {
         schedule_agent_runtime_placeholder(repos, task.id.clone());
     }
@@ -2195,17 +2197,15 @@ pub(crate) async fn hydrate_agent_task_from_hermes(
     Ok(())
 }
 
-/// The Hermes session of a task and the database it is read from. A session
-/// is read in the home that owns it, and only there (ADR-0140,
-/// `session_owner`): a known session from its owner, an unbound task from
-/// the one home where its title matches and which owns that match.
+/// A task's Hermes session and its database, read in its owner's home only
+/// (ADR-0140): an unbound task in its own mode's home (`session_owner`).
 #[cfg(desktop)]
 async fn find_hermes_session(
     repos: &Repositories,
     task: &AgentTaskDto,
     data_dir: &Path,
 ) -> Result<Option<(SqlitePool, String)>, AppError> {
-    use crate::hermes_bridge::session_owner::{owner_of, Owner};
+    use crate::hermes_bridge::session_owner::{self, owner_of, Owner};
     let shared_home = data_dir.join(Owner::Shared.dir_name());
     let mut found = None;
     match task.hermes_session_id.clone() {
@@ -2217,7 +2217,7 @@ async fn find_hermes_session(
             }
         }
         _ => {
-            for home in [Owner::Sandboxed, Owner::Shared] {
+            for home in session_owner::homes_for_unbound_task(&shared_home, &task.id) {
                 let hermes_db_path = home.home(&shared_home).join("state.db");
                 if !hermes_db_path.exists() {
                     continue;
@@ -2251,12 +2251,9 @@ async fn find_hermes_session(
 #[cfg(desktop)]
 const HERMES_SESSION_MATCH_WINDOW_SECONDS: f64 = 300.0;
 
-/// Heuristically binds a Hermes session to a task by title. Titles are
-/// derived from the first 64 characters of the prompt, so identical prompts
-/// collide; only bind when exactly one session with this title started near
-/// the task's creation time and it is not already bound to another task.
-/// When the match is ambiguous, skip hydration for this poll instead of
-/// persisting a guess.
+/// Binds by title the one session that started near the task and is bound to
+/// no other task (titles are the prompt's first 64 characters, so they
+/// collide); an ambiguous match is skipped, never guessed.
 #[cfg(desktop)]
 async fn match_hermes_session_for_task(
     repos: &Repositories,
@@ -2303,8 +2300,7 @@ async fn match_hermes_session_for_task(
     Ok(Some(session_id))
 }
 
-/// Cached read pool for the Hermes `state.db`, re-opened only if the path
-/// changes, so per-task polling does not open a fresh pool every second.
+/// Cached read pool for the Hermes `state.db`, re-opened only on a new path.
 #[cfg(desktop)]
 static HERMES_STATE_POOL: tokio::sync::Mutex<Vec<(PathBuf, SqlitePool)>> =
     tokio::sync::Mutex::const_new(Vec::new());
@@ -2370,6 +2366,10 @@ pub(crate) fn app_paths(app: &AppHandle) -> Result<AppPaths, AppError> {
     AppPaths::from_data_dir(data_dir)
         .map_err(|error| AppError::new("storage_unavailable", error.to_string()))
 }
+
+#[cfg(all(test, desktop))]
+#[path = "commands_hermes_tests.rs"]
+mod hermes_session_tests;
 
 #[cfg(test)]
 mod tests {

@@ -101,6 +101,71 @@ pub(crate) fn record(any_home: &Path, session_id: &str, owner: Owner) -> Result<
         .map_err(|error| AppError::new("hermes_session_home_failed", error.to_string()))
 }
 
+/// The record of each task's home, by the mode it was created in, beside
+/// the conversations' record; written by the app alone.
+const TASK_RECORD_FILE: &str = "hermes-task-homes.json";
+
+fn task_record_path(any_home: &Path) -> PathBuf {
+    any_home.parent().unwrap_or(any_home).join(TASK_RECORD_FILE)
+}
+
+/// The home of the mode a task was created in, when the app knows it.
+pub(crate) fn task_home(any_home: &Path, task_id: &str) -> Option<Owner> {
+    std::fs::read(task_record_path(any_home))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<BTreeMap<String, Owner>>(&bytes).ok())
+        .and_then(|homes| homes.get(task_id).copied())
+}
+
+/// Records the home of the mode a task is created in.
+pub(crate) fn record_task_home(
+    any_home: &Path,
+    task_id: &str,
+    owner: Owner,
+) -> Result<(), AppError> {
+    let _guard = RECORD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let path = task_record_path(any_home);
+    let mut homes: BTreeMap<String, Owner> = std::fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default();
+    homes.insert(task_id.to_string(), owner);
+    let text = serde_json::to_vec_pretty(&homes)
+        .map_err(|error| AppError::new("hermes_session_home_failed", error.to_string()))?;
+    let temp = path.with_extension("json.tmp");
+    std::fs::write(&temp, text)
+        .and_then(|()| std::fs::rename(&temp, &path))
+        .map_err(|error| AppError::new("hermes_session_home_failed", error.to_string()))
+}
+
+/// Records, when the caller knows it, the mode a task was created in.
+pub(crate) fn remember_task_home(
+    app: &tauri::AppHandle,
+    task_id: &str,
+    unrestricted: Option<bool>,
+) {
+    let (Some(unrestricted), Ok(home)) = (unrestricted, super::resolve_june_hermes_home(app))
+    else {
+        return;
+    };
+    if let Err(error) = record_task_home(&home, task_id, Owner::of_mode(unrestricted)) {
+        eprintln!("hermes: could not record task {task_id}'s home: {error:?}");
+    }
+}
+
+/// The homes a task whose conversation is not bound yet may be matched in
+/// by its title (ADR-0140): the home of the mode it was created in, and
+/// only that one. A task whose mode the app does not know (made before this
+/// record, or by a caller that did not say) is matched in the shared home
+/// only, which only processes outside the jail write: never in the jail's,
+/// where a conversation could have been forged to match it.
+pub(crate) fn homes_for_unbound_task(any_home: &Path, task_id: &str) -> Vec<Owner> {
+    match task_home(any_home, task_id) {
+        Some(owner) => vec![owner],
+        None => vec![Owner::Shared],
+    }
+}
+
 /// A session identifier as the record keeps it: the exact text, checked
 /// once (review 4): not empty, no surrounding space, no control character,
 /// at most 256 bytes. One that would need trimming is refused, so the

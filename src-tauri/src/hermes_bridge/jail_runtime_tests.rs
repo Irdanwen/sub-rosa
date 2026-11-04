@@ -84,6 +84,7 @@ impl RealJail {
             result_dir: None,
             jail_tmp: Some(&jail_tmp),
             loopback_ports: &ports,
+            listen_ports: &ports[1..],
         });
         let profile = root.join("hermes-sandbox.sb");
         std::fs::write(&profile, profile_text).unwrap();
@@ -515,6 +516,7 @@ fn the_jailed_reader_reads_the_sandboxed_home() {
             result_dir: Some(&results),
             jail_tmp: Some(&jail_tmp),
             loopback_ports: &[],
+            listen_ports: &[],
         }),
     )
     .unwrap();
