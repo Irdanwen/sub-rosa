@@ -2,8 +2,7 @@
 #
 # Same split as the desktop crate (`src-tauri/.cargo/audit.toml`): a
 # vulnerability fails the run, an unmaintained or unsound crate is reported.
-# One advisory is ignored, with its reason inline; it should stay easy to see
-# when a second one appears.
+# Each ignored advisory carries its reason inline, with what would end it.
 
 [advisories]
 ignore = [
@@ -14,4 +13,16 @@ ignore = [
   # private-key operations, which a verifier does not perform. Revisit if the
   # backend ever signs with RSA, or when jsonwebtoken's backend moves off rsa.
   "RUSTSEC-2023-0071",
+  # crypto-bigint 0.5.5 (RUSTSEC-2026-0387: secret-dependent branches in
+  # arithmetic meant to be constant-time). The fix exists only in 0.7.6 and
+  # later. 0.5 comes with elliptic-curve 0.13, through p256/p384 0.13, from
+  # jsonwebtoken 11.1.0, whose newest release still asks for p256 0.13, so no
+  # lockfile update reaches the fix. A timing leak needs a secret operand, and
+  # none reaches this code here: jsonwebtoken only verifies ES256 signatures
+  # (`crates/providers/src/jwks.rs`, dead here since ADR-0017 deleted OS
+  # Accounts). A verification handles the token, the signature and the public
+  # key, all public. Signing appears in tests only, with a fixture key.
+  # Review on 2027-02-01, or drop this entry as soon as jsonwebtoken moves to
+  # p256 0.14.
+  "RUSTSEC-2026-0387",
 ]

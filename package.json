@@ -55,7 +55,7 @@
     "@tauri-apps/plugin-notification": "~2.6.0",
     "@tauri-apps/plugin-os": "~2.4.0",
     "@tauri-apps/plugin-process": "~2.4.0",
-    "@tauri-apps/plugin-updater": "~2.13.1",
+    "@tauri-apps/plugin-updater": "~2.14.1",
     "@tiptap/extension-code-block": "3.32.0",
     "@tiptap/extension-highlight": "3.32.0",
     "@tiptap/extension-list": "3.32.0",
