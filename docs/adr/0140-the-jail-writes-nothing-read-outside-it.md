@@ -845,3 +845,46 @@ what the test registered. A separate entry, `killpg_child`, takes the
 group and nothing else; `jailed_git` uses it for its time limit, the
 reaper never does.
 
+## Addendum 2026-11-04: three points of the security review
+
+An automated security review of the pushed branch found three medium
+points; the auditor confirmed the first and the third as medium, the
+second as low. All three are closed at their cause.
+
+**A task bound to a conversation the jail forged.** A task whose
+conversation was not bound yet was matched by title and start time, in
+the jail's home first, then in the shared one. The jail can read an
+unrestricted conversation's title and start in the shared `state.db`, and
+write in its own home a conversation with the same title and time: the app
+bound the unrestricted task to it. Now a task is matched in the home of
+the mode it was created in and only there; the app records that mode
+(`hermes-task-homes.json`, beside the conversations' record, written by
+the app alone) when the caller states it (`unrestricted` on task
+creation). A task whose mode the app does not know (every task made
+before this record) is matched in the shared home only, which only
+processes outside the jail write, never in the jail's: a task created in
+the jail and never bound stays unbound, which is safe. Tested with that
+exact case: the real conversation in the shared home and its forged copy in
+the jail's, same title, same time; the task gets the real one.
+
+**Git's check failed open.** When `git config --list` failed (a
+configuration git cannot read or parse), the folder was taken as safe.
+It is now refused, with the message the person already reads.
+
+**A local MCP server vouched for itself.** For a sign-in run from the
+jail, the configured server is often a loopback or private address, and
+its own origin vouched for itself: a jailed process listening on that
+port could answer as the server and have the browser open an address of
+its choosing. Two layers now. For a sign-in run from the jail, a server
+that is local by its text or by any address it resolves to vouches for
+nothing (neither itself nor what its metadata declares): the address is
+shown to the person. And the jail's profile refuses to listen
+(`network-bind`) anywhere but on its own unix sockets and the runtime's
+dashboard port. Measured: `(deny network-bind)` followed by an allow by
+port keeps that port alone, while a `(local ip "*:*")` deny also refuses
+the allowed port; a unix socket needs its own allow; outbound HTTPS and
+Python's multiprocessing are unaffected; with nothing bound, nothing comes
+in, so no `network-inbound` rule is needed.
+
+**And two secret names** (the auditor's): `*.tfvars` and `.htpasswd`.
+
