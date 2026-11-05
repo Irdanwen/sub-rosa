@@ -18,6 +18,7 @@ import {
   chatTitleFor,
   promptWithFiles,
 } from "../../lib/chat-bar";
+import { recordSessionHomeInBackground } from "../../lib/agent-session-modes";
 import { messageFromError } from "../../lib/errors";
 import { classifyHermesEvent } from "../../lib/hermes-control-plane/event-classifier";
 import { hermesConnectionForMode } from "../../lib/hermes-connection";
@@ -126,6 +127,8 @@ export function ChatBar() {
     const runtimeId = String(created.session_id ?? created.id ?? "");
     const storedId = String(created.stored_session_id ?? runtimeId);
     if (!runtimeId) throw new Error(t("Hermes did not create a session."));
+    // The chat bar runs sandboxed: its sessions live in the jail's home.
+    recordSessionHomeInBackground(storedId, false);
     const next = { storedId, runtimeId, title };
     sessionRef.current = next;
     setSession(next);

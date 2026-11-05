@@ -339,6 +339,8 @@ pub async fn create_agent_task(
             request.model.as_deref(),
         )
         .await?;
+    #[cfg(desktop)]
+    crate::hermes_bridge::session_owner::remember_task_home(&app, &task.id, request.unrestricted);
     if request.run_placeholder.unwrap_or(true) {
         schedule_agent_runtime_placeholder(repos, task.id.clone());
     }
@@ -2120,18 +2122,8 @@ pub(crate) async fn hydrate_agent_task_from_hermes(
     crate::assistants::general::ensure_general_continuation(&repos.pool, task_id).await?;
     let task = repos.get_agent_task(task_id).await?;
     let paths = app_paths(app)?;
-    let hermes_db_path = paths.data_dir.join("hermes").join("state.db");
-    if !hermes_db_path.exists() {
-        return Ok(());
-    }
-    let pool = hermes_state_pool(&hermes_db_path).await?;
-
-    let session_id = match task.hermes_session_id.clone() {
-        Some(session_id) if !session_id.trim().is_empty() => Some(session_id),
-        _ => match_hermes_session_for_task(repos, &pool, &task).await?,
-    };
-
-    let Some(session_id) = session_id else {
+    let found = find_hermes_session(repos, &task, &paths.data_dir).await?;
+    let Some((pool, session_id)) = found else {
         return Ok(());
     };
 
@@ -2205,20 +2197,70 @@ pub(crate) async fn hydrate_agent_task_from_hermes(
     Ok(())
 }
 
+/// A task's Hermes session and its database, read in its owner's home only
+/// (ADR-0140): an unbound task in its own mode's home (`session_owner`).
+#[cfg(desktop)]
+async fn find_hermes_session(
+    repos: &Repositories,
+    task: &AgentTaskDto,
+    data_dir: &Path,
+) -> Result<Option<(SqlitePool, String)>, AppError> {
+    use crate::hermes_bridge::session_owner::{self, owner_of, Owner};
+    let shared_home = data_dir.join(Owner::Shared.dir_name());
+    let mut found = None;
+    match task.hermes_session_id.clone() {
+        Some(session_id) if !session_id.trim().is_empty() => {
+            let owner = owner_of(&shared_home, &session_id).await;
+            let hermes_db_path = owner.home(&shared_home).join("state.db");
+            if hermes_db_path.exists() {
+                found = Some((hermes_state_pool(&hermes_db_path).await?, session_id));
+            }
+        }
+        _ => {
+            for home in session_owner::homes_for_unbound_task(&shared_home, &task.id) {
+                let hermes_db_path = home.home(&shared_home).join("state.db");
+                if !hermes_db_path.exists() {
+                    continue;
+                }
+                let pool = hermes_state_pool(&hermes_db_path).await?;
+                let Some(session_id) =
+                    match_hermes_session_for_task(repos, &pool, task, home, &shared_home).await?
+                else {
+                    continue;
+                };
+                found = Some((pool, session_id));
+                break;
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// The phone has no Hermes runtime.
+#[cfg(mobile)]
+async fn find_hermes_session(
+    _repos: &Repositories,
+    _task: &AgentTaskDto,
+    _data_dir: &Path,
+) -> Result<Option<(SqlitePool, String)>, AppError> {
+    Ok(None)
+}
+
 /// How close (in seconds) a Hermes session's `started_at` must be to the
 /// task's creation time for heuristic title matching to bind them.
+#[cfg(desktop)]
 const HERMES_SESSION_MATCH_WINDOW_SECONDS: f64 = 300.0;
 
-/// Heuristically binds a Hermes session to a task by title. Titles are
-/// derived from the first 64 characters of the prompt, so identical prompts
-/// collide; only bind when exactly one session with this title started near
-/// the task's creation time and it is not already bound to another task.
-/// When the match is ambiguous, skip hydration for this poll instead of
-/// persisting a guess.
+/// Binds by title the one session that started near the task and is bound to
+/// no other task (titles are the prompt's first 64 characters, so they
+/// collide); an ambiguous match is skipped, never guessed.
+#[cfg(desktop)]
 async fn match_hermes_session_for_task(
     repos: &Repositories,
     pool: &SqlitePool,
     task: &AgentTaskDto,
+    home: crate::hermes_bridge::session_owner::Owner,
+    shared_home: &Path,
 ) -> Result<Option<String>, AppError> {
     let Ok(task_started_at) = chrono::DateTime::parse_from_rfc3339(&task.created_at)
         .map(|value| value.timestamp_millis() as f64 / 1000.0)
@@ -2242,6 +2284,10 @@ async fn match_hermes_session_for_task(
         return Ok(None);
     }
     let session_id: String = rows[0].get("id");
+    // A match is bound only in the home that owns it (ADR-0140).
+    if crate::hermes_bridge::session_owner::owner_of(shared_home, &session_id).await != home {
+        return Ok(None);
+    }
     if repos
         .hermes_session_bound_to_other_task(&task.id, &session_id)
         .await?
@@ -2254,27 +2300,24 @@ async fn match_hermes_session_for_task(
     Ok(Some(session_id))
 }
 
-/// Cached read pool for the Hermes `state.db`, re-opened only if the path
-/// changes, so per-task polling does not open a fresh pool every second.
-static HERMES_STATE_POOL: tokio::sync::Mutex<Option<(PathBuf, SqlitePool)>> =
-    tokio::sync::Mutex::const_new(None);
+/// Cached read pool for the Hermes `state.db`, re-opened only on a new path.
+#[cfg(desktop)]
+static HERMES_STATE_POOL: tokio::sync::Mutex<Vec<(PathBuf, SqlitePool)>> =
+    tokio::sync::Mutex::const_new(Vec::new());
 
+#[cfg(desktop)]
 async fn hermes_state_pool(path: &Path) -> Result<SqlitePool, AppError> {
     let mut cached = HERMES_STATE_POOL.lock().await;
-    if let Some((cached_path, pool)) = cached.as_ref() {
-        if cached_path == path && !pool.is_closed() {
-            return Ok(pool.clone());
-        }
+    cached.retain(|(_, pool)| !pool.is_closed());
+    if let Some((_, pool)) = cached.iter().find(|(cached_path, _)| cached_path == path) {
+        return Ok(pool.clone());
     }
-    let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
-        .map_err(|error| AppError::new("hermes_state_unavailable", error.to_string()))?
-        .create_if_missing(false);
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect_with(options)
+    // Read only, its schema distrusted: the sandboxed home's database is
+    // written by the jail (ADR-0140).
+    let pool = crate::hermes_bridge::session_owner::hardened_pool(path, 1)
         .await
         .map_err(|error| AppError::new("hermes_state_unavailable", error.to_string()))?;
-    *cached = Some((path.to_path_buf(), pool.clone()));
+    cached.push((path.to_path_buf(), pool.clone()));
     Ok(pool)
 }
 
@@ -2323,6 +2366,10 @@ pub(crate) fn app_paths(app: &AppHandle) -> Result<AppPaths, AppError> {
     AppPaths::from_data_dir(data_dir)
         .map_err(|error| AppError::new("storage_unavailable", error.to_string()))
 }
+
+#[cfg(all(test, desktop))]
+#[path = "commands_hermes_tests.rs"]
+mod hermes_session_tests;
 
 #[cfg(test)]
 mod tests {

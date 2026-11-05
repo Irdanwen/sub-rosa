@@ -76,6 +76,9 @@ pub struct FileChange {
     /// False when no copy of the starting content was kept.
     pub revertible: bool,
     pub truncated: bool,
+    /// A secret file (`path_confinement::is_secret_file`): named, its
+    /// content never shown (ADR-0140).
+    pub sensitive: bool,
 }
 
 /// What a file held at the start.
@@ -155,7 +158,7 @@ pub(super) fn start(store: &Path, folder: &Path) -> Result<Review, AppError> {
         stop(store)?;
     }
     let git = Git { folder };
-    let (base, names) = match git.head() {
+    let (base, names) = match git.head()? {
         Some(head) => {
             let names = git.changed_since(&head)?;
             (Base::Git { head }, names)
@@ -265,6 +268,7 @@ fn change_of(store: &Path, review: &Review, name: &str) -> Result<Option<FileCha
     };
     let new: &[u8] = current.as_deref().unwrap_or_default();
     let binary = matches!(start, Start::Uncopied(_)) || !is_text(old) || !is_text(new);
+    let sensitive = crate::path_confinement::is_secret_file(Path::new(name));
     let mut change = FileChange {
         path: name.to_string(),
         status,
@@ -274,8 +278,9 @@ fn change_of(store: &Path, review: &Review, name: &str) -> Result<Option<FileCha
         binary,
         revertible,
         truncated: false,
+        sensitive,
     };
-    if !binary {
+    if !binary && !sensitive {
         let (old, new) = (String::from_utf8_lossy(old), String::from_utf8_lossy(new));
         let mut options = diffy::DiffOptions::new();
         options
@@ -367,6 +372,14 @@ fn not_changed() -> AppError {
     )
 }
 
+// Tests only: what happens between the checks and the write (the jail
+// writing the folder meanwhile).
+#[cfg(test)]
+thread_local! {
+    pub(super) static BEFORE_THE_WRITE: std::cell::Cell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::Cell::new(None) };
+}
+
 /// Reverts a change: the file goes back to its starting content, or away if
 /// it did not exist. Only a file listed as changed now can be reverted, and
 /// only inside the folder.
@@ -381,34 +394,28 @@ pub(super) fn revert(store: &Path, review: &Review, name: &str) -> Result<(), Ap
             "This file was too large to keep a copy of, so it cannot be reverted here.",
         ));
     }
+    let _ = path;
+    #[cfg(test)]
+    BEFORE_THE_WRITE.with(|hook| hook.take().map(|hook| hook()));
+    // Written the way it is read (ADR-0140): every folder on the way opened
+    // without following a link, a new file renamed over the old one within
+    // that folder. A link put in since the check refuses the write rather
+    // than carrying it somewhere else.
+    let refused = |error: crate::confined_read::Refused| match error {
+        crate::confined_read::Refused::Io(error) => failed(error),
+        _ => AppError::new(
+            "code_review_path_refused",
+            "This file is not one this chat changed in its working folder.",
+        ),
+    };
     match start_state(store, review, name)? {
         Start::Content(bytes) => {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).map_err(failed)?;
-            }
-            // Replace rather than write through: a link put there since would
-            // otherwise carry the write somewhere else.
-            if std::fs::symlink_metadata(&path).is_ok_and(|m| !m.is_file()) {
-                return Err(AppError::new(
-                    "code_review_path_refused",
-                    "This file is not one this chat changed in its working folder.",
-                ));
-            }
-            let temporary = path.with_file_name(format!(
-                ".{}.subrosa-revert",
-                path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
-            ));
-            std::fs::write(&temporary, bytes).map_err(failed)?;
-            std::fs::rename(&temporary, &path).map_err(failed)
+            crate::confined_read::write_beneath(&review.folder, Path::new(name), &bytes)
+                .map_err(refused)
         }
-        Start::Absent => match std::fs::symlink_metadata(&path) {
-            Ok(metadata) if metadata.is_file() => std::fs::remove_file(&path).map_err(failed),
-            Ok(_) => Err(AppError::new(
-                "code_review_path_refused",
-                "This file is not one this chat changed in its working folder.",
-            )),
-            Err(_) => Ok(()),
-        },
+        Start::Absent => {
+            crate::confined_read::remove_beneath(&review.folder, Path::new(name)).map_err(refused)
+        }
         Start::Uncopied(_) => Err(AppError::new(
             "code_review_not_revertible",
             "This file was too large to keep a copy of, so it cannot be reverted here.",

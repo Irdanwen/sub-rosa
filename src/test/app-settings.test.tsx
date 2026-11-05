@@ -32,6 +32,21 @@ const mocks = vi.hoisted(() => ({
   agentHudShow: vi.fn(),
   agentHudHide: vi.fn(),
   hermesAgentCliAccess: vi.fn(),
+  hermesQuarantineNotice: vi.fn(
+    async (): Promise<{
+      dir: string;
+      items: string[];
+      flagged: string[];
+      redo: string[];
+    } | null> => null,
+  ),
+  dismissHermesQuarantineNotice: vi.fn(async () => undefined),
+  restoreHermesQuarantine: vi.fn(
+    async (_items: string[]): Promise<{ restored: string[]; refused: string[] }> => ({
+      restored: [],
+      refused: [],
+    }),
+  ),
   setHermesAgentCliAccess: vi.fn(),
   listDictionaryEntries: vi.fn(),
   createDictionaryEntry: vi.fn(),
@@ -88,6 +103,9 @@ vi.mock("../lib/tauri", () => ({
   agentHudShow: mocks.agentHudShow,
   agentHudHide: mocks.agentHudHide,
   hermesAgentCliAccess: mocks.hermesAgentCliAccess,
+  hermesQuarantineNotice: mocks.hermesQuarantineNotice,
+  dismissHermesQuarantineNotice: mocks.dismissHermesQuarantineNotice,
+  restoreHermesQuarantine: mocks.restoreHermesQuarantine,
   setHermesAgentCliAccess: mocks.setHermesAgentCliAccess,
   listDictionaryEntries: mocks.listDictionaryEntries,
   createDictionaryEntry: mocks.createDictionaryEntry,
@@ -342,6 +360,9 @@ describe("AppSettings", () => {
     mocks.agentHudShow.mockResolvedValue(undefined);
     mocks.agentHudHide.mockResolvedValue(undefined);
     mocks.hermesAgentCliAccess.mockResolvedValue({ enabled: false });
+    mocks.hermesQuarantineNotice.mockResolvedValue(null);
+    mocks.dismissHermesQuarantineNotice.mockResolvedValue(undefined);
+    mocks.restoreHermesQuarantine.mockResolvedValue({ restored: [], refused: [] });
     mocks.setHermesAgentCliAccess.mockImplementation(async (enabled: boolean) => ({ enabled }));
     mocks.setDictationShortcut.mockImplementation(async (kind, shortcut) => ({
       ...baseSettings,
@@ -1766,6 +1787,80 @@ describe("AppSettings", () => {
     expect(screen.getByText("sample.pdf")).toBeInTheDocument();
     expect(screen.getByText("USER.md")).toBeInTheDocument();
     expect(screen.queryByText("Logs")).toBeNull();
+  });
+
+  it("says once what the first start set aside, and what a sandboxed session cannot do", async () => {
+    const user = userEvent.setup();
+    mocks.hermesQuarantineNotice.mockResolvedValue({
+      dir: "/data/quarantine/2026-10-31",
+      items: ["hooks/x", "platforms/pairing", "cron/jobs.json#script"],
+      flagged: ["skills/planted"],
+      redo: ["messaging", "mcp_sign_in", "workspace"],
+    });
+    render(
+      <AppSettings
+        sourceMode="microphoneOnly"
+        checkingSourceReadiness={false}
+        onSourceModeChange={vi.fn()}
+        onEnableSystemAudio={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("tab", { name: "Agent" }));
+    expect(screen.getByText("In a sandboxed session")).toBeInTheDocument();
+    expect(screen.getByText(/the command checker it would download stays off/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/use the clipboard, show notifications or take screenshots/),
+    ).toBeInTheDocument();
+    expect(await screen.findByText(/3 items were moved/)).toBeInTheDocument();
+    expect(screen.getByText(/Some may be yours/)).toBeInTheDocument();
+    expect(screen.getByText(/\/data\/quarantine\/2026-10-31/)).toBeInTheDocument();
+    expect(screen.getByText("skills/planted")).toBeInTheDocument();
+    expect(screen.getByText(/Pair your messaging channels again/)).toBeInTheDocument();
+    expect(screen.getByText(/Sign in again to the connectors/)).toBeInTheDocument();
+    expect(screen.getByText(/Unrestricted workspace in the Files panel/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Got it" }));
+    expect(mocks.dismissHermesQuarantineNotice).toHaveBeenCalled();
+    expect(screen.queryByText(/3 items were moved/)).toBeNull();
+  });
+
+  it("puts back only the items the person chose, after saying what will run again", async () => {
+    const user = userEvent.setup();
+    mocks.hermesQuarantineNotice.mockResolvedValue({
+      dir: "/data/quarantine/2026-10-31",
+      items: ["kanban.db", "hooks/x", "scripts"],
+      flagged: [],
+      redo: ["task_boards"],
+    });
+    mocks.restoreHermesQuarantine.mockResolvedValue({
+      restored: ["kanban.db"],
+      refused: ["scripts"],
+    });
+    mocks.dismissHermesQuarantineNotice.mockClear();
+    mocks.restoreHermesQuarantine.mockClear();
+    render(
+      <AppSettings
+        sourceMode="microphoneOnly"
+        checkingSourceReadiness={false}
+        onSourceModeChange={vi.fn()}
+        onEnableSystemAudio={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("tab", { name: "Agent" }));
+    expect(await screen.findByText(/Your task boards were set aside/)).toBeInTheDocument();
+    const putBack = screen.getByRole("button", { name: /Put back the selected items/ });
+    expect(putBack).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: "kanban.db" }));
+    await user.click(screen.getByRole("checkbox", { name: "scripts" }));
+    await user.click(screen.getByRole("button", { name: "Put back the selected items (2)" }));
+    // Nothing is put back before the person reads what will run again.
+    expect(mocks.restoreHermesQuarantine).not.toHaveBeenCalled();
+    expect(screen.getByText(/these will run outside the sandbox again/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Put them back" }));
+    expect(mocks.restoreHermesQuarantine).toHaveBeenCalledWith(["kanban.db", "scripts"]);
+    expect(await screen.findByText(/1 items are back/)).toBeInTheDocument();
+    expect(screen.getByText(/a link is never put back/)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "hooks/x" })).not.toBeChecked();
+    expect(mocks.dismissHermesQuarantineNotice).not.toHaveBeenCalled();
   });
 
   it("shows a refreshable messaging state when platform loading hangs", async () => {

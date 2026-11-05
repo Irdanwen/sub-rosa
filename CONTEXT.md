@@ -408,6 +408,38 @@ _Avoid_: project dir; workspace (that's the Hermes-home scratch area); folder
 (unqualified — `folders`/projects are the session-grouping feature, no
 filesystem meaning).
 
+**Sandboxed home / shared home**:
+Since ADR-0140 each runtime mode has its Hermes home. The **sandboxed home**
+(`<app data>/hermes-sandboxed/`) belongs to the sandboxed runtime alone: no
+process outside the jail runs or resumes anything from it, and the app reads
+it as data. The **shared home** (`<app data>/hermes/`) belongs to the
+unrestricted runtime, the gateway (routines, messaging, task boards) and the
+app's settings changes; the jail cannot write it.
+_Avoid_: "the Hermes home" unqualified when the mode matters.
+
+**Owner home** (of a conversation):
+The one home a conversation is read and written in (ADR-0140): the shared
+home for a routine's run, otherwise the home recorded when it was created or
+resumed, otherwise the shared home when it has the conversation, otherwise
+the sandboxed home. A copy of it in the other home is never read.
+_Avoid_: "where the session lives" when both homes have a copy.
+
+**Runtime state**:
+The parts of the sandboxed home the jail may write (ADR-0140): the default
+workspace, session records and the session database, logs, caches, attached
+images. Everything else there (its settings, `.env`, skills, memories,
+routines, plugins) and the runtime's installation are read-only to the
+jail, written by the app at every start.
+_Avoid_: write roots (the home is no longer one).
+
+**Settings record**:
+`hermes-settings.json`, next to the Hermes home: the settings a person made in
+Settings (their MCP servers, skill and toolset switches, skill configuration,
+messaging switches, environment keys), kept by the app and written back into
+`config.yaml` and `.env` at every start (ADR-0140). A settings change runs
+outside the jail, in a one-shot process of the app.
+_Avoid_: overlay (code name only), profile.
+
 **Stored session id** vs **runtime session id**:
 The persistent id June keys all UI and history on, versus the live process's
 per-resume id. `session.create` returns both; conflating them attaches

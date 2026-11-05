@@ -245,6 +245,11 @@ function VerdictRound({ verdict }: { verdict: CouncilVerdict }) {
         </span>
       </h3>
 
+      {verdict.notice ? (
+        <p className="council-verdict-summary" role="note">
+          {t(verdict.notice)}
+        </p>
+      ) : null}
       {verdict.summary ? <p className="council-verdict-summary">{verdict.summary}</p> : null}
 
       <ol className="council-criteria-list">

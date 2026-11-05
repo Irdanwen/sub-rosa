@@ -143,6 +143,7 @@ pub async fn run(app: &tauri::AppHandle, mandate_id: &str, round: i64) -> Result
             text: String::new(),
             kind: "missing",
             truncated: false,
+            notice: None,
         },
     };
     if gathered.text.trim().is_empty() {
@@ -293,6 +294,7 @@ pub async fn run(app: &tauri::AppHandle, mandate_id: &str, round: i64) -> Result
         criteria,
         findings,
         summary,
+        notice: gathered.notice.clone(),
     };
     if let Some(_row) = repos
         .set_council_verdict_ready(
@@ -720,6 +722,7 @@ mod tests {
             }],
             findings: vec![],
             summary: None,
+            notice: None,
             prompt_version: "council-v1".into(),
             last_error: None,
             created_at: String::new(),

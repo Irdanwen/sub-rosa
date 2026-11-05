@@ -340,7 +340,10 @@ async fn delete_hermes_session(app: &AppHandle, session_id: &str) -> Result<bool
 #[cfg(desktop)]
 fn remove_runtime_files(app: &AppHandle, session_id: &str) {
     if let Ok(home) = crate::hermes_bridge::resolve_june_hermes_home(app) {
-        remove_session_files(&home.join("sessions"), session_id);
+        // A session lives in one of the two homes (ADR-0140).
+        for home in crate::hermes_bridge::home_split::both_homes(&home) {
+            remove_session_files(&home.join("sessions"), session_id);
+        }
     }
 }
 

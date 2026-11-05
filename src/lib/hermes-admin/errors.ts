@@ -14,6 +14,7 @@
  *   developer-only.
  */
 
+import { t } from "../i18n";
 import { redactBodyPreview } from "./redact";
 
 /** How the failure happened, so callers can branch without string-matching the
@@ -60,7 +61,7 @@ export class HermesAdminError extends Error {
   readonly rawBodyPreview?: string;
 
   constructor(init: HermesAdminErrorInit) {
-    const safeMessage = init.safeMessage ?? defaultSafeMessage(init.kind, init.status);
+    const safeMessage = init.safeMessage ?? defaultSafeMessage(init.kind, init.status, init.code);
     // The Error message itself must be safe: it can land in a console or a
     // generic crash reporter, so it gets the SAFE text, never the raw body.
     super(safeMessage);
@@ -115,27 +116,37 @@ function isAbortError(error: unknown): boolean {
 }
 
 /** A generic, user-safe message for a kind/status. Deliberately says nothing
- * about the response body. */
-function defaultSafeMessage(kind: HermesAdminErrorKind, status?: number): string {
+ * about the response body, and never names the runtime: the person sees the
+ * assistant (ADR-0017). Since ADR-0140 a settings change is made by the app
+ * itself, so a 5xx means the change was not made, not that the assistant is
+ * broken. */
+function defaultSafeMessage(kind: HermesAdminErrorKind, status?: number, code?: string): string {
+  // The app refused a key its settings do not know (ADR-0140).
+  if (code === "setting_key_not_declared") {
+    return t(
+      "Sub Rosa's settings cannot set this key. Only the keys a skill or a service asks for are kept.",
+    );
+  }
   switch (kind) {
     case "offline":
-      return "Hermes is not running.";
+      return t("The assistant is not running. Open a chat to start it, then try again.");
     case "network":
-      return "Could not reach Hermes.";
+      return t("Sub Rosa could not reach the assistant. Try again.");
     case "timeout":
-      return "The request to Hermes timed out.";
+      return t("The assistant took too long to answer. Try again.");
     case "parse":
-      return "Hermes returned an unexpected response.";
+      return t("The assistant sent an answer Sub Rosa could not read.");
     case "http":
       if (status === 401 || status === 403) {
-        return "Hermes rejected the request (not authorized).";
+        return t("The assistant refused this request.");
       }
-      if (status === 404) return "That Hermes resource was not found.";
-      if (status === 409) return "That change conflicts with the current state.";
+      if (status === 404) return t("This item no longer exists.");
+      if (status === 409) return t("That change conflicts with the current state.");
+
       if (status !== undefined && status >= 500) {
-        return "Hermes ran into a problem with that request.";
+        return t("This change was not made. Try again.");
       }
-      return "Hermes could not complete that request.";
+      return t("The assistant could not complete this request.");
   }
 }
 

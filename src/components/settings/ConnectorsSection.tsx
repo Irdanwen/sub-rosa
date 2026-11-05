@@ -1,7 +1,4 @@
-import { useCallback } from "react";
-import type { Connector } from "../../lib/connectors";
 import { useConnectors } from "../../lib/connectors";
-import { useMcpServers } from "../../lib/hermes-admin";
 import { t } from "../../lib/i18n";
 import { ConnectorsPanel } from "../connectors/ConnectorsPanel";
 import { SkillPacksPanel } from "../connectors/SkillPacksPanel";
@@ -12,25 +9,14 @@ import { SkillPacksPanel } from "../connectors/SkillPacksPanel";
  * the computer's agent reaches it through the app's own `subrosa_connectors`
  * server, under the same rules as the phones. Skill packs sit beside it, for
  * the same reason.
+ *
+ * Removing a connector used to also delete a copy the catalog once wrote into
+ * the agent's own server list, and only through the sandboxed runtime. No copy
+ * outlives a start any more: the app rewrites that list at every start and
+ * keeps only the servers a person added in Settings (ADR-0140).
  */
 export function ConnectorsSection() {
   const model = useConnectors();
-  const servers = useMcpServers("sandboxed");
-  // Before the addendum, connecting from the catalog also wrote the server
-  // into the agent's own MCP list. Removing the connector removes that copy
-  // too, when it is still the catalog's (same name, same address).
-  const onRemoved = useCallback(
-    async (connector: Connector) => {
-      const legacy = servers.servers.find(
-        (server) =>
-          connector.catalogId !== "" &&
-          server.name === connector.catalogId &&
-          server.url === connector.url,
-      );
-      if (legacy) await servers.remove(legacy.name);
-    },
-    [servers],
-  );
   return (
     <section className="settings-group" aria-labelledby="connectors-heading">
       <h2 id="connectors-heading" className="settings-group-heading">
@@ -46,7 +32,6 @@ export function ConnectorsSection() {
           connectors={model.connectors}
           catalog={model.catalog}
           refresh={model.refresh}
-          onRemoved={onRemoved}
         />
       </div>
       <h2 className="settings-group-heading">{t("Skill packs")}</h2>

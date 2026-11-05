@@ -27,6 +27,12 @@ const CRON_MCP_SERVERS: &[&str] = &[
     crate::connectors::hermes::SERVER,
 ];
 
+/// Whether `name` is one of the servers the app writes into every
+/// `config.yaml` (a person's own servers are kept apart, ADR-0140).
+pub(super) fn is_builtin_server(name: &str) -> bool {
+    name == PERSONAL_DATA_MCP_SERVER_NAME || CRON_MCP_SERVERS.contains(&name)
+}
+
 /// The `config.yaml` line [`cron_toolsets`] writes, for the bridge's tests.
 #[cfg(test)]
 pub(super) fn cron_entry(sandboxed: &[&str]) -> String {

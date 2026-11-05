@@ -1258,6 +1258,34 @@ export async function setHermesAgentCliAccess(enabled: boolean) {
   });
 }
 
+/** What the first start under ADR-0140 set aside from the assistant's
+ * folder (hooks, scripts, routines that run a script, plugins, installed
+ * servers, the scanner), what it left in place but flagged, and what the
+ * person has to do again, while the person has not seen it. */
+export type HermesQuarantineNotice = {
+  dir: string;
+  items: string[];
+  flagged: string[];
+  redo: string[];
+};
+
+export async function hermesQuarantineNotice() {
+  return invoke<HermesQuarantineNotice | null>("hermes_quarantine_notice");
+}
+
+export async function dismissHermesQuarantineNotice() {
+  return invoke<void>("dismiss_hermes_quarantine_notice");
+}
+
+/** What a restore put back, and what it left aside (a link never comes
+ * back, nor an item whose place is taken). */
+export type HermesRestoreOutcome = { restored: string[]; refused: string[] };
+
+/** Puts back the items the person chose of what was set aside. */
+export async function restoreHermesQuarantine(items: string[]) {
+  return invoke<HermesRestoreOutcome>("restore_hermes_quarantine", { request: { items } });
+}
+
 export async function hermesBridgeMessagingPlatforms() {
   return invoke<HermesMessagingPlatformsResponse>("hermes_bridge_messaging_platforms");
 }
@@ -1545,6 +1573,9 @@ export type HermesMcpOauthLoginResult = {
   authUrl: string | null;
   /** True when the wait elapsed before the CLI reported a terminal state. */
   timedOut: boolean;
+  /** True when the address is not on an origin the server declares: it was
+   * not opened, and the person decides whether to open it (ADR-0140). */
+  authUrlUnverified?: boolean;
 };
 
 /**

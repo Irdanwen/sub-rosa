@@ -33,7 +33,7 @@ const JUNE_HERMES_COMMAND_ENV: &str = "JUNE_HERMES_COMMAND";
 // agent able to write anywhere the user can, so only flip it knowingly.
 const JUNE_HERMES_DISABLE_SANDBOX_ENV: &str = "JUNE_HERMES_DISABLE_SANDBOX";
 // Referenced by the spawn match arm on every target; only ever reached when
-// `prepare_sandbox` returns a profile, which it only does on macOS.
+// `sandbox_profile::prepare` returns a profile, which it only does on macOS.
 const SANDBOX_EXEC_PATH: &str = "/usr/bin/sandbox-exec";
 // Hermes Agent v0.19.0 (v2026.7.20). See the matching upstream pin note for
 // the audited pin-to-tag compatibility delta. (The fork bundles the pinned
@@ -231,9 +231,11 @@ You cannot start a render or spend anything. Compiling the shots into a producti
 const JUNE_SOUL_SANDBOX_MD: &str = r#"
 Your environment: sessions run by default inside a macOS kernel sandbox (Seatbelt) that the Sub Rosa app applies to you and to every subprocess you start. It is a write-jail, part of the same privacy-by-architecture story. The user chooses the mode per session: sessions are Sandboxed unless they explicitly started this one in Unrestricted mode. When a "Sandbox status for this session" line appears in your environment notes, it is the authoritative answer for the current session — trust it over any assumption. In a sandboxed session:
 
-- You can write only inside your own area — your Hermes home (including your workspace), your runtime directory, and your temp directory. Writes anywhere else (the user's dotfiles, Desktop, Documents, system settings) are denied by the kernel.
+- You can write only inside your own area: your workspace, your temp directory, and the records the runtime keeps of your sessions. Writes anywhere else (the user's dotfiles, Desktop, Documents, system settings) are denied by the kernel.
+- Your own settings are read-only to you: your configuration, environment file, installed skills, saved memories, scheduled routines, plugins and the runtime itself. Other parts of Sub Rosa run them outside this sandbox, so a sandboxed session may not change them. When a write there fails with "operation not permitted", do not look for another way in: tell the user what to change, and that they change it in Sub Rosa's Settings (skills, connectors, tools) or in Routines. Sub Rosa remembers facts about the user through its own memory, which works in every session.
 - The user can also give a session a working folder: when a "Working folder for this session" line appears in your environment notes, that folder is your current directory and the jail explicitly allows writes inside it (credential stores stay blocked). Work on the user's files there directly. Without that line, no user folder is writable.
 - Reads stay broad so you can work with the user's files, except credential stores (~/.ssh, ~/.aws, ~/.gnupg, keychains, .netrc), which are blocked.
+- You cannot open anything on the user's screen or reach their other apps: opening a link, a file or an application (`open`, a browser, `osascript`, Shortcuts), the clipboard, notifications, screenshots and simulated keys or clicks are all refused. When the user should open something, give them the link or the path in your reply and let them open it.
 - When a command fails with "operation not permitted" on a write outside your area, that is the sandbox working as designed. Don't retry or look for workarounds: produce the file in your workspace and tell the user where it is, or ask them to do that one step. If the user wants you to write outside the jail, they can start a new session in Unrestricted mode.
 - If the user asks whether you can damage their system, answer honestly: in a sandboxed session, destructive writes outside your workspace are blocked at the kernel level, not just by policy; in an Unrestricted session that protection is off because they chose to turn it off.
 "#;
@@ -268,7 +270,7 @@ Agent CLIs (Claude Code, Codex, Gemini, opencode): the user enabled Agent CLI ac
 /// carries the definitive answer for every session it runs. Without it the
 /// agent has to guess and tends to assume the sandboxed default even in
 /// Unrestricted sessions.
-const JUNE_HINT_SANDBOXED: &str = "Sandbox status for this session: Sandboxed. The Sub Rosa app's macOS Seatbelt write-jail is active for this process and every subprocess you start; writes outside your own area are denied by the kernel.";
+const JUNE_HINT_SANDBOXED: &str = "Sandbox status for this session: Sandboxed. The Sub Rosa app's macOS Seatbelt write-jail is active for this process and every subprocess you start; writes outside your own area are denied by the kernel. You cannot open links, files or applications, use the clipboard or control other apps: give the user the link or the path instead.";
 const JUNE_HINT_UNRESTRICTED: &str = "Sandbox status for this session: Unrestricted. The user explicitly started this session with Sub Rosa's sandbox off, so no Seatbelt write-jail applies to this process: you can write anywhere the user's account can. Be deliberate with destructive operations, and do not describe this session as sandboxed.";
 
 /// Composes the per-spawn environment hint. The sandbox-status line appears
@@ -339,21 +341,27 @@ const AGENT_CLI_STATE_DIRS: &[&str] = &[
 /// through randomly suffixed temp names (`.claude.json.<hash>` + rename).
 const AGENT_CLI_STATE_FILE_PREFIXES: &[&str] = &[".claude.json"];
 
-/// The single Hermes config file the sandboxed runtime owns, relative to
-/// `$HERMES_HOME`. June's native admin surfaces (skill toggle, MCP add,
-/// catalog install, skill config) all persist through Hermes' `save_config`,
-/// which lives inside the jailed runtime process, so the jail must let the
-/// runtime rewrite its own config or every admin mutation fails with a 500.
-const HERMES_CONFIG_FILE: &str = "config.yaml";
+/// The runtime's command line. No --tui: upstream removed the flag from the
+/// dashboard subcommand before v2026.7.20, and the embedded chat gateway
+/// (/api/ws) is always enabled; passing it is an argparse error.
+fn dashboard_args(port: &str) -> [&str; 8] {
+    [
+        HERMES_PROFILE_FLAG,
+        HERMES_DEFAULT_PROFILE,
+        "dashboard",
+        "--no-open",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        port,
+    ]
+}
 
-/// `save_config` writes `config.yaml` atomically: it streams a temp file then
-/// `os.replace()`s it onto the real path. The replace needs write+unlink on the
-/// target and the temp, and the temp is named with a random suffix
-/// (`.config_<random>.tmp`), so it must be granted via a prefix regex rather
-/// than a literal — exactly like `AGENT_CLI_STATE_FILE_PREFIXES` does for
-/// Claude Code's `.claude.json.<hash>` atomic writes. The prefix is relative to
-/// `$HERMES_HOME`; the trailing wildcard covers the random suffix.
-const HERMES_CONFIG_ATOMIC_TEMP_PREFIX: &str = ".config_";
+/// Every command the app runs names the default profile (ADR-0140): left
+/// without one, the runtime's command line follows the `active_profile`
+/// file of its home into another home.
+const HERMES_PROFILE_FLAG: &str = "--profile";
+const HERMES_DEFAULT_PROFILE: &str = "default";
 
 const ISOLATED_HERMES_ENV_VARS: &[&str] = &[
     "HERMES_HOME",
@@ -456,6 +464,9 @@ struct HermesRuntimeOwnershipRecord {
     runtime_pid: u32,
     runtime_start: String,
     full_mode: bool,
+    /// The jailed runtime's mark (`jail_reaper`), for a later start to reap.
+    #[serde(default)]
+    jail_mark: Option<String>,
 }
 
 #[cfg(target_os = "macos")]
@@ -650,6 +661,9 @@ pub struct HermesMcpOauthLoginResult {
     pub message: Option<String>,
     pub auth_url: Option<String>,
     pub timed_out: bool,
+    /// The address is not on an origin the server declares: it was not
+    /// opened, the person decides (ADR-0140).
+    pub auth_url_unverified: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1119,10 +1133,14 @@ async fn start_hermes_bridge_inner(
         "ws://127.0.0.1:{port}/api/ws?token={}",
         urlencoding::encode(&token)
     );
-    let hermes_home = resolve_june_hermes_home(app)?;
+    // ADR-0140: the sandboxed runtime lives in a home of its own.
+    let hermes_home = home_split::home_for_mode(app, full_mode)?;
     let command_resolution = resolve_hermes_command(app, &hermes_home).await?;
     let command = command_resolution.command;
     let _command_source = command_resolution.source;
+    if !full_mode {
+        home_split::migrate_once(&hermes_home).await;
+    }
     let default_cwd = hermes_home.join("workspace");
     std::fs::create_dir_all(&default_cwd)
         .map_err(|error| AppError::new("hermes_bridge_workspace_failed", error.to_string()))?;
@@ -1132,6 +1150,9 @@ async fn start_hermes_bridge_inner(
     let custom_working_dir: Option<PathBuf> = working_dir_requirement.flatten();
     let cwd = custom_working_dir.clone().unwrap_or(default_cwd);
     let cwd_display = Some(cwd.to_string_lossy().into_owned());
+    // Before the config: the bundled skills the jailed runtime can no longer
+    // copy, and the keys the runtime declares, which the `.env` is held to.
+    admin_once::sync_bundled_skills(&command, &hermes_home).await;
     let provider_proxy = ensure_provider_proxy(app, bridge).await?;
     let june_web_mcp =
         sync_june_web_mcp(app, &command, provider_proxy.port, &provider_proxy.token)?;
@@ -1153,6 +1174,14 @@ async fn start_hermes_bridge_inner(
     )
     .await?;
     guard::install(app, &hermes_home).await?;
+    // Only a runtime that names its service after its home: another one's
+    // gateway is not this app's to restart.
+    if gateway_label::names_service_per_home(Path::new(&command))
+        && quarantine::take_gateway_restart(&hermes_home)
+    {
+        let mut restart = gateway_start::restart_command(&command, &hermes_home);
+        let _ = tauri::async_runtime::spawn_blocking(move || restart.status()).await;
+    }
 
     // Wrap the spawn in a macOS Seatbelt write-jail when possible. The model,
     // its tool calls, and any subprocess it forks all inherit the profile, so
@@ -1164,13 +1193,18 @@ async fn start_hermes_bridge_inner(
     let sandbox_profile = if full_mode {
         None
     } else {
-        prepare_sandbox(
+        // The loopback ports it may reach: the app's proxy (models, the
+        // built-in MCP servers) and its own dashboard (H2).
+        sandbox_profile::prepare(
             app,
             &hermes_home,
             agent_cli_access,
             custom_working_dir.as_deref(),
+            &[provider_proxy.port, port],
+            &[port],
         )
     };
+    sandbox_profile::prepare_reader(app, &hermes_home);
     let sandboxed = sandbox_profile.is_some();
     // SOUL.md is shared by both processes (single home), so its sandbox
     // section describes the per-session mode split rather than this spawn.
@@ -1196,17 +1230,7 @@ async fn start_hermes_bridge_inner(
         );
     }
     let port_string = port.to_string();
-    // No --tui: upstream removed the flag from the dashboard subcommand before
-    // v2026.7.20, and the embedded chat gateway (/api/ws) is always enabled.
-    // Passing the flag is an argparse error.
-    let hermes_args: [&str; 6] = [
-        "dashboard",
-        "--no-open",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        port_string.as_str(),
-    ];
+    let hermes_args = dashboard_args(&port_string);
 
     let mut cmd = match &sandbox_profile {
         Some(profile_path) => {
@@ -1246,15 +1270,15 @@ async fn start_hermes_bridge_inner(
     apply_isolated_hermes_env(&mut cmd, &hermes_home, &token, environment_hint.as_deref());
     cmd.current_dir(&cwd);
 
-    // Put the runtime in its own process group so teardown can reap the whole
-    // tree, not just the tracked child. The dashboard (and, unsandboxed, the
-    // Python runtime it becomes) can fork worker subprocesses; a bare
-    // `child.kill()` would leave those orphaned when the app quits or relaunches
-    // for an update (JUN-338). See `shutdown_hermes_process`.
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt as _;
-        cmd.process_group(0);
+    // Its own session, so teardown reaps the whole tree (JUN-338, see
+    // `shutdown_hermes_process`) and the jail cannot join the app's group.
+    sandbox_profile::own_session(&mut cmd);
+    // Everything a jailed runtime starts carries its mark (D5), inherits no
+    // way to the person's agents and has its own temp folder (M1).
+    let jail_mark = sandboxed.then(jail_reaper::new_mark);
+    if let Some(mark) = &jail_mark {
+        cmd.env(jail_reaper::JAIL_MARK_ENV, mark);
+        sandbox_profile::apply_jail_env(&mut cmd, sandbox_profile::jail_tmp_for_env().as_deref());
     }
 
     let mut child = cmd.spawn().map_err(|error| {
@@ -1263,6 +1287,9 @@ async fn start_hermes_bridge_inner(
             format!("Could not start the built-in agent runtime. {error}"),
         )
     })?;
+    if let Some(mark) = jail_mark {
+        jail_reaper::remember(child.id(), mark);
+    }
     // Persist ownership before any later operation can lose this Child handle.
     // If identity probing or the atomic write fails, this helper reaps the new
     // process group and returns the start error instead of leaving it untracked.
@@ -2608,30 +2635,32 @@ fn cron_store_is_corrupt(hermes_home: &Path) -> bool {
 pub async fn hermes_bridge_cron_jobs(
     bridge: State<'_, HermesBridge>,
 ) -> Result<serde_json::Value, AppError> {
-    let connections = live_connections(&bridge)?;
-    let Some(connection) = connections.first() else {
+    cron_jobs_of(&live_connections(&bridge)?).await
+}
+
+/// The routines, from the shared home where the gateway runs them, whichever
+/// runtime is up (ADR-0140): never a list the sandboxed runtime answers.
+async fn cron_jobs_of(
+    connections: &[HermesBridgeConnection],
+) -> Result<serde_json::Value, AppError> {
+    let Some(first) = connections.first() else {
         return Err(AppError::new(
             "hermes_bridge_not_running",
             "Hermes bridge is not running.",
         ));
     };
-    let result = hermes_connection_json(
-        connection,
-        reqwest::Method::GET,
-        &format!("/api/cron/jobs?{CRON_PROFILE_QUERY}"),
-        None,
-    )
-    .await;
-    match result {
+    let shared = home_split::shared_home(Path::new(&first.hermes_home));
+    let path = format!("/api/cron/jobs?{CRON_PROFILE_QUERY}");
+    match home_split::api_json(connections, reqwest::Method::GET, &path, None).await {
         Err(error)
             if error.message.starts_with("Hermes API returned 500")
-                && cron_store_is_corrupt(Path::new(&connection.hermes_home)) =>
+                && cron_store_is_corrupt(&shared) =>
         {
             Err(AppError::new(
                 CRON_STORE_CORRUPTED_CODE,
                 format!(
                     "The routines database at {} is corrupted or unreadable.",
-                    cron_store_jobs_file(Path::new(&connection.hermes_home)).display()
+                    cron_store_jobs_file(&shared).display()
                 ),
             ))
         }
@@ -2655,7 +2684,7 @@ pub async fn hermes_bridge_reset_cron_store(
             "Hermes bridge is not running.",
         ));
     };
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
     if !cron_store_is_corrupt(&hermes_home) {
         return Err(AppError::new(
             "hermes_cron_store_healthy",
@@ -2834,7 +2863,7 @@ pub async fn download_hermes_bridge_file(
     fs::create_dir_all(&downloads_dir)
         .map_err(|error| AppError::new("hermes_file_download_failed", error.to_string()))?;
     let destination = unique_download_path(&downloads_dir, &requested)?;
-    fs::copy(&requested, &destination)
+    crate::confined_read::copy_resolved(&requested, &destination)
         .map_err(|error| AppError::new("hermes_file_download_failed", error.to_string()))?;
     Ok(destination.to_string_lossy().into_owned())
 }
@@ -2885,7 +2914,7 @@ pub async fn save_hermes_bridge_file(
         fs::create_dir_all(parent)
             .map_err(|error| AppError::new("hermes_file_save_failed", error.to_string()))?;
     }
-    fs::copy(&requested, &destination)
+    crate::confined_read::copy_resolved(&requested, &destination)
         .map_err(|error| AppError::new("hermes_file_save_failed", error.to_string()))?;
     Ok(Some(destination.to_string_lossy().into_owned()))
 }
@@ -3012,15 +3041,17 @@ pub async fn hermes_bridge_image_for_model(
     let Some(mime_type) = image_mime_type(&requested) else {
         return Ok(None);
     };
-    let metadata = fs::metadata(&requested)
-        .map_err(|error| AppError::new("hermes_file_preview_failed", error.to_string()))?;
-    // The import cap already bounds what can reach the workspace; this guards
-    // the decode buffer against a file that slipped in by another route.
-    if metadata.len() > HERMES_IMAGE_ATTACH_MAX_SOURCE_BYTES {
+    // Bounded (the decode buffer), and again from `/` without following a
+    // link put in since the check: this goes to the model (ADR-0140).
+    let read = crate::confined_read::read_resolved_within(
+        &requested,
+        HERMES_IMAGE_ATTACH_MAX_SOURCE_BYTES,
+    );
+    let Some(bytes) =
+        read.map_err(|e| AppError::new("hermes_file_preview_failed", e.to_string()))?
+    else {
         return Ok(None);
-    }
-    let bytes = fs::read(&requested)
-        .map_err(|error| AppError::new("hermes_file_preview_failed", error.to_string()))?;
+    };
     let budget = request
         .max_bytes
         .unwrap_or(HERMES_IMAGE_ATTACH_DEFAULT_BUDGET_BYTES)
@@ -3066,11 +3097,16 @@ pub async fn import_hermes_bridge_file(
         ));
     }
     let hermes_home = resolve_june_hermes_home(&app)?;
-    let upload_dir = hermes_home.join("workspace").join("uploads");
-    fs::create_dir_all(&upload_dir)
+    let upload_dir = home_prep::upload_dir(&hermes_home)
         .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
     let destination = unique_upload_path(&upload_dir, &source)?;
-    fs::copy(&source, &destination)
+    // A new file only, never what stands at the name: the jail writes this
+    // folder too (ADR-0140).
+    let mut reader = fs::File::open(&source)
+        .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
+    let mut writer = home_prep::create_new_file(&destination)
+        .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
+    io::copy(&mut reader, &mut writer)
         .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
     let size = fs::metadata(&destination)
         .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?
@@ -3121,12 +3157,15 @@ pub fn import_hermes_bridge_file_bytes(
         .unwrap_or_default();
     let file_name = validate_dropped_file_name(&raw_name)?;
     let hermes_home = resolve_june_hermes_home(&app)?;
-    let upload_dir = hermes_home.join("workspace").join("uploads");
-    fs::create_dir_all(&upload_dir)
+    let upload_dir = home_prep::upload_dir(&hermes_home)
         .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
     let destination = unique_upload_path(&upload_dir, Path::new(&file_name))?;
-    fs::write(&destination, bytes)
-        .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
+    {
+        use io::Write as _;
+        home_prep::create_new_file(&destination)
+            .and_then(|mut file| file.write_all(bytes))
+            .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
+    }
     let name = destination
         .file_name()
         .and_then(|value| value.to_str())
@@ -3261,7 +3300,7 @@ fn unique_download_path(downloads_dir: &Path, source: &Path) -> Result<PathBuf, 
             )
         })?;
     let candidate = downloads_dir.join(file_name);
-    if !candidate.exists() {
+    if candidate.symlink_metadata().is_err() {
         return Ok(candidate);
     }
 
@@ -3276,7 +3315,7 @@ fn unique_download_path(downloads_dir: &Path, source: &Path) -> Result<PathBuf, 
             _ => format!("{stem} ({index})"),
         };
         let candidate = downloads_dir.join(file_name);
-        if !candidate.exists() {
+        if candidate.symlink_metadata().is_err() {
             return Ok(candidate);
         }
     }
@@ -3298,7 +3337,7 @@ fn unique_upload_path(upload_dir: &Path, source: &Path) -> Result<PathBuf, AppEr
             )
         })?;
     let candidate = upload_dir.join(file_name);
-    if !candidate.exists() {
+    if candidate.symlink_metadata().is_err() {
         return Ok(candidate);
     }
 
@@ -3313,7 +3352,7 @@ fn unique_upload_path(upload_dir: &Path, source: &Path) -> Result<PathBuf, AppEr
             _ => format!("{stem} ({index})"),
         };
         let candidate = upload_dir.join(file_name);
-        if !candidate.exists() {
+        if candidate.symlink_metadata().is_err() {
             return Ok(candidate);
         }
     }
@@ -3332,32 +3371,24 @@ fn unique_upload_path(upload_dir: &Path, source: &Path) -> Result<PathBuf, AppEr
 /// the cap detects oversize), not a stat-then-read, so a file still being
 /// written by an agent can't grow past the limit between check and read.
 fn text_preview(path: &Path) -> Result<Option<String>, AppError> {
-    use std::io::Read;
-
-    let file = fs::File::open(path)
-        .map_err(|error| AppError::new("hermes_file_text_failed", error.to_string()))?;
-    let mut bytes = Vec::new();
-    let read = file
-        .take(HERMES_TEXT_PREVIEW_MAX_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| AppError::new("hermes_file_text_failed", error.to_string()))?;
-    if read as u64 > HERMES_TEXT_PREVIEW_MAX_BYTES {
-        return Ok(None);
+    // Again from `/` without following a link put in since the check.
+    match crate::confined_read::read_resolved(path, HERMES_TEXT_PREVIEW_MAX_BYTES) {
+        Ok(bytes) => Ok(String::from_utf8(bytes).ok()),
+        Err(crate::confined_read::Refused::TooLarge) => Ok(None),
+        Err(error) => Err(AppError::new("hermes_file_text_failed", error.to_string())),
     }
-    Ok(String::from_utf8(bytes).ok())
 }
 
 fn image_preview_data_url(path: &Path) -> Result<Option<String>, AppError> {
     let Some(mime_type) = image_mime_type(path) else {
         return Ok(None);
     };
-    let metadata = fs::metadata(path)
-        .map_err(|error| AppError::new("hermes_file_preview_failed", error.to_string()))?;
-    if metadata.len() > HERMES_IMAGE_PREVIEW_MAX_BYTES {
+    let read = crate::confined_read::read_resolved_within(path, HERMES_IMAGE_PREVIEW_MAX_BYTES);
+    let Some(bytes) =
+        read.map_err(|e| AppError::new("hermes_file_preview_failed", e.to_string()))?
+    else {
         return Ok(None);
-    }
-    let bytes = fs::read(path)
-        .map_err(|error| AppError::new("hermes_file_preview_failed", error.to_string()))?;
+    };
     Ok(Some(format!(
         "data:{mime_type};base64,{}",
         BASE64_STANDARD.encode(bytes)
@@ -3429,14 +3460,9 @@ pub(crate) async fn hermes_api_json(
     path: &str,
     body: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, AppError> {
-    let connections = live_connections(bridge)?;
-    let Some(connection) = connections.first() else {
-        return Err(AppError::new(
-            "hermes_bridge_not_running",
-            "Hermes bridge is not running.",
-        ));
-    };
-    hermes_connection_json(connection, method, path, body).await
+    // ADR-0140: each mode has its home; the request goes to the one it is
+    // about (sessions span both, routines and messaging are the shared one's).
+    home_split::api_json(&live_connections(bridge)?, method, path, body).await
 }
 
 /// The generic admin proxy the foundation admin client (`src/lib/hermes-admin`)
@@ -3512,32 +3538,6 @@ fn is_safe_mcp_server_name(name: &str) -> bool {
     }
     name.chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
-}
-
-/// Builds the `hermes mcp login <server> [--profile <p>]` command, isolated to
-/// the connection's home/token, non-interactive, in the connection's mode. Pure
-/// (no spawn) so a test can assert the exact argument vector and that the server
-/// name is a discrete argument rather than shell-interpolated.
-fn build_hermes_mcp_login_command(
-    connection: &HermesBridgeConnection,
-    server: &str,
-    profile: Option<&str>,
-) -> Command {
-    let hermes_home = PathBuf::from(&connection.hermes_home);
-    let mut cmd = Command::new(&connection.command);
-    cmd.args(["mcp", "login", server]);
-    if let Some(profile) = profile {
-        cmd.args(["--profile", profile]);
-    }
-    apply_isolated_hermes_env(&mut cmd, &hermes_home, &connection.token, None);
-    // Non-interactive: the CLI must print the authorization URL and not block on
-    // a terminal prompt June cannot answer. June opens the URL in the browser.
-    cmd.env("HERMES_NONINTERACTIVE", "1");
-    cmd.current_dir(&hermes_home);
-    cmd.stdin(Stdio::null());
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
-    cmd
 }
 
 /// Extracts the first http(s) authorization URL from CLI output. Returns the URL
@@ -3730,7 +3730,25 @@ pub async fn hermes_mcp_oauth_login(
 
     let server = request.server.clone();
     let profile = request.profile.clone();
-    let mut cmd = build_hermes_mcp_login_command(&connection, &server, profile.as_deref());
+    let jail = if full_mode {
+        None
+    } else {
+        home_split::reader_jail(
+            Path::new(&connection.hermes_home),
+            sandbox_profile::jail_engages(),
+        )?
+    };
+    let mut cmd = mcp_login::build_hermes_mcp_login_command(
+        &connection,
+        &server,
+        profile.as_deref(),
+        jail.as_deref(),
+    );
+    let mark = cmd
+        .get_envs()
+        .find(|(key, _)| *key == jail_reaper::JAIL_MARK_ENV)
+        .and_then(|(_, value)| value)
+        .map(|value| value.to_string_lossy().into_owned());
 
     // Run the short-lived CLI off the async runtime with a bounded wait. We read
     // its piped output to find the authorization URL; we never persist it.
@@ -3741,7 +3759,11 @@ pub async fn hermes_mcp_oauth_login(
                 format!("Could not run `hermes mcp login`. {error}"),
             )
         })?;
-        wait_with_timeout(child, MCP_OAUTH_LOGIN_TIMEOUT)
+        let finished = wait_with_timeout(child, MCP_OAUTH_LOGIN_TIMEOUT);
+        if let Some(mark) = mark {
+            jail_reaper::reap_mark(&mark);
+        }
+        finished
     })
     .await
     .map_err(|error| {
@@ -3757,11 +3779,20 @@ pub async fn hermes_mcp_oauth_login(
     // sign-in. macOS only; on other platforms June surfaces the URL for a manual
     // open. The URL is a navigation target, not a credential, but it is still
     // redacted before display on the TS side.
+    // Only an address on the server's own origin, or one its metadata
+    // declares, opens by itself; any other is shown to the person (ADR-0140).
+    let mut auth_url_unverified = false;
+    let jailed = jail.is_some();
     if let Some(url) = auth_url.as_deref() {
-        open_url_in_browser(url);
+        let home = home_split::shared_home(Path::new(&connection.hermes_home));
+        match mcp_oauth_origin::openable_authorization_url(&home, &server, url, jailed).await {
+            Some(checked) => open_url_in_browser(&checked),
+            None => auth_url_unverified = true,
+        }
     }
 
     Ok(HermesMcpOauthLoginResult {
+        auth_url_unverified,
         ok: mcp_login_succeeded(join.exit_success, &combined),
         message: redact_cli_message(&combined),
         // The browser was opened above with the real URL; the copy returned to
@@ -3787,7 +3818,7 @@ fn is_safe_skill_name(name: &str) -> bool {
     is_safe_mcp_server_name(name)
 }
 
-/// Builds `hermes skills reset <name> [--restore] [--profile <p>]`, isolated to
+/// Builds `hermes skills reset <name> [--restore] --profile default`, isolated to
 /// the connection's home/token, non-interactive, in the connection's mode. Pure
 /// (no spawn) so a test can assert the exact argument vector and that the skill
 /// name is a discrete argument rather than shell-interpolated.
@@ -3795,17 +3826,17 @@ fn build_hermes_skill_reset_command(
     connection: &HermesBridgeConnection,
     name: &str,
     restore: bool,
-    profile: Option<&str>,
+    _profile: Option<&str>,
 ) -> Command {
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
     let mut cmd = Command::new(&connection.command);
     cmd.args(["skills", "reset", name]);
     if restore {
         cmd.arg("--restore");
     }
-    if let Some(profile) = profile {
-        cmd.args(["--profile", profile]);
-    }
+    // Always the default profile, whatever the webview asked (ADR-0140): the
+    // app provisions no other, and another one's home is not the app's.
+    cmd.args([HERMES_PROFILE_FLAG, HERMES_DEFAULT_PROFILE]);
     apply_isolated_hermes_env(&mut cmd, &hermes_home, &connection.token, None);
     cmd.env("HERMES_NONINTERACTIVE", "1");
     cmd.current_dir(&hermes_home);
@@ -3985,7 +4016,7 @@ fn is_safe_tap_path(path: &str) -> bool {
     true
 }
 
-/// Builds `hermes skills tap <subcommand> [args...] [--profile <p>]`, isolated to
+/// Builds `hermes skills tap <subcommand> [args...] --profile default`, isolated to
 /// the connection's home/token, non-interactive, in the connection's mode. Pure
 /// (no spawn) so a test can assert the exact argument vector and that every value
 /// is a discrete argument rather than shell-interpolated.
@@ -3994,9 +4025,9 @@ fn build_hermes_skill_tap_command(
     subcommand: &str,
     repo: Option<&str>,
     path: Option<&str>,
-    profile: Option<&str>,
+    _profile: Option<&str>,
 ) -> Command {
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
     let mut cmd = Command::new(&connection.command);
     cmd.args(["skills", "tap", subcommand]);
     if let Some(repo) = repo {
@@ -4005,9 +4036,9 @@ fn build_hermes_skill_tap_command(
     if let Some(path) = path {
         cmd.args(["--path", path]);
     }
-    if let Some(profile) = profile {
-        cmd.args(["--profile", profile]);
-    }
+    // Always the default profile, whatever the webview asked (ADR-0140): the
+    // app provisions no other, and another one's home is not the app's.
+    cmd.args([HERMES_PROFILE_FLAG, HERMES_DEFAULT_PROFILE]);
     apply_isolated_hermes_env(&mut cmd, &hermes_home, &connection.token, None);
     cmd.env("HERMES_NONINTERACTIVE", "1");
     cmd.current_dir(&hermes_home);
@@ -4671,7 +4702,7 @@ pub async fn hermes_list_skill_bundles(
     request: ListHermesSkillBundlesRequest,
 ) -> Result<Vec<HermesSkillBundle>, AppError> {
     let connection = bundle_connection(&bridge, &request.mode)?;
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
     let bundles_dir = resolve_bundles_dir(&hermes_home, request.profile.as_deref())?;
     read_bundles_in_dir(&bundles_dir)
 }
@@ -4686,7 +4717,7 @@ pub async fn hermes_save_skill_bundle(
     request: SaveHermesSkillBundleRequest,
 ) -> Result<HermesSkillBundle, AppError> {
     let connection = bundle_connection(&bridge, &request.mode)?;
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
     let bundles_dir = resolve_bundles_dir(&hermes_home, request.profile.as_deref())?;
 
     let mut bundle = request.bundle;
@@ -4736,7 +4767,7 @@ pub async fn hermes_delete_skill_bundle(
     request: DeleteHermesSkillBundleRequest,
 ) -> Result<(), AppError> {
     let connection = bundle_connection(&bridge, &request.mode)?;
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
     let bundles_dir = resolve_bundles_dir(&hermes_home, request.profile.as_deref())?;
     let file = resolve_bundle_file(&bundles_dir, request.slug.trim())?;
     match fs::remove_file(&file) {
@@ -5186,8 +5217,22 @@ async fn ensure_hermes_gateway_running(
 }
 
 async fn hermes_gateway_running(connection: &HermesBridgeConnection) -> Result<bool, AppError> {
-    let status =
-        hermes_connection_json(connection, reqwest::Method::GET, "/api/status", None).await?;
+    // The sandboxed runtime's dashboard knows only its own home, which has
+    // no gateway (ADR-0140): ask the shared home.
+    let status = if connection.full_mode {
+        hermes_connection_json(connection, reqwest::Method::GET, "/api/status", None).await?
+    } else {
+        let shared = home_split::shared_home(Path::new(&connection.hermes_home));
+        admin_once::read_on(
+            &connection.command,
+            &shared,
+            None,
+            reqwest::Method::GET,
+            "/api/status",
+            None,
+        )
+        .await?
+    };
     Ok(status
         .get("gateway_running")
         .and_then(serde_json::Value::as_bool)
@@ -5226,7 +5271,7 @@ async fn wait_for_hermes_gateway(connection: &HermesBridgeConnection) -> Result<
 /// which sits outside the jail's write roots.
 ///
 /// Fire-and-forget like the bridge endpoint was: the CLI's stdout/stderr go to
-/// `<hermes_home>/logs/gateway-start.log` (the same file the bridge's action
+/// `<app data>/logs/gateway-start.log` (the same file the bridge's action
 /// runner appends to) and the exit status is reaped in the background.
 fn spawn_hermes_gateway_start(connection: &HermesBridgeConnection) -> Result<(), AppError> {
     let mut cmd = hermes_gateway_start_command(connection);
@@ -5284,7 +5329,11 @@ async fn run_hermes_gateway_start(connection: &HermesBridgeConnection) -> Result
 }
 
 fn hermes_gateway_start_command(connection: &HermesBridgeConnection) -> Command {
-    let hermes_home = PathBuf::from(&connection.hermes_home);
+    // ADR-0140: the gateway lives in the shared home, never the jail's,
+    // whichever runtime asks for it.
+    let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
+    // The service the runtime registers restarts without a profile flag.
+    home_prep::neutralize_active_profile(&hermes_home);
     let mut cmd = gateway_start::start_command(connection, &hermes_home);
     match open_gateway_start_log(&hermes_home) {
         Some((log_for_stdout, log_for_stderr)) => {
@@ -5308,17 +5357,17 @@ fn answer_gateway_install_prompts(child: &mut std::process::Child) {
     }
 }
 
-/// Opens `<hermes_home>/logs/gateway-start.log` for appending and writes the
+/// Opens `<app data>/logs/gateway-start.log` for appending and writes the
 /// same header line the bridge's action runner does, tagged with the app as
 /// the spawner. Returns two handles (stdout, stderr) onto the same file, or
 /// `None` when the log can't be opened — the spawn then proceeds silenced
 /// rather than failing gateway startup over diagnostics.
-/// Opens `logs/dashboard.log` for the bridge (dashboard) process's
+/// Opens `<app data>/logs/dashboard.log` for the bridge (dashboard) process's
 /// stdout/stderr. Truncated on every spawn: the file holds the current
 /// process's output only, so uvicorn chatter can't grow it unbounded across
 /// months while the traceback of the latest failure stays easy to find.
 fn open_dashboard_log(hermes_home: &Path) -> Option<(std::fs::File, std::fs::File)> {
-    let log_dir = hermes_home.join("logs");
+    let log_dir = home_prep::app_log_dir(hermes_home);
     fs::create_dir_all(&log_dir).ok()?;
     let mut file = fs::OpenOptions::new()
         .create(true)
@@ -5337,7 +5386,7 @@ fn open_dashboard_log(hermes_home: &Path) -> Option<(std::fs::File, std::fs::Fil
 }
 
 fn open_gateway_start_log(hermes_home: &Path) -> Option<(std::fs::File, std::fs::File)> {
-    let log_dir = hermes_home.join("logs");
+    let log_dir = home_prep::app_log_dir(hermes_home);
     fs::create_dir_all(&log_dir).ok()?;
     let mut file = fs::OpenOptions::new()
         .create(true)
@@ -5421,6 +5470,9 @@ fn build_hermes_tui_debug_launcher_script(
             shell_single_quote(hint)
         ));
     }
+    if sandbox_profile.is_some() {
+        script.push_str(&sandbox_profile::jail_env_shell());
+    }
     if let Some(dir) = working_dir {
         // Same cwd as the dashboard spawn for this session, so relative
         // paths in the debugged session resolve identically.
@@ -5471,7 +5523,8 @@ pub async fn open_hermes_tui_debug(
         ));
     }
 
-    let hermes_home = resolve_june_hermes_home(&app)?;
+    // The home of the session's mode (ADR-0140).
+    let hermes_home = home_split::home_for_mode(&app, request.unrestricted)?;
     let command_resolution = resolve_hermes_command(&app, &hermes_home).await?;
     let command = command_resolution.command;
 
@@ -5493,7 +5546,17 @@ pub async fn open_hermes_tui_debug(
     let sandbox_profile = if full_mode {
         None
     } else {
-        prepare_sandbox(&app, &hermes_home, agent_cli_access, working_dir.as_deref())
+        // The TUI reaches the app's proxy, nothing else on the loopback (H2).
+        let bridge = app.state::<HermesBridge>();
+        let proxy_port = ensure_provider_proxy(&app, &bridge).await?.port;
+        sandbox_profile::prepare(
+            &app,
+            &hermes_home,
+            agent_cli_access,
+            working_dir.as_deref(),
+            &[proxy_port],
+            &[],
+        )
     };
     let sandbox_available = if full_mode {
         sandbox_would_engage(&app, &hermes_home)
@@ -5515,7 +5578,11 @@ pub async fn open_hermes_tui_debug(
     eprintln!("{trace_line}");
 
     let token = random_token();
-    let args = hermes_tui_resume_args(&session_id);
+    let mut args = vec![
+        HERMES_PROFILE_FLAG.to_string(),
+        HERMES_DEFAULT_PROFILE.to_string(),
+    ];
+    args.extend(hermes_tui_resume_args(&session_id));
     let script = build_hermes_tui_debug_launcher_script(
         &command,
         &args,
@@ -5541,7 +5608,9 @@ fn launch_hermes_tui_debug_terminal(
 ) -> Result<(), AppError> {
     use std::os::unix::fs::PermissionsExt;
 
-    let log_dir = hermes_home.join("logs");
+    // The app's data folder, never the home's `logs/`: the jail writes there,
+    // and this script runs in a terminal outside it (ADR-0140).
+    let log_dir = home_prep::app_log_dir(hermes_home);
     fs::create_dir_all(&log_dir)
         .map_err(|error| AppError::new("hermes_tui_debug_failed", error.to_string()))?;
     // A `.command` file opens in Terminal and runs on launch. Name it by
@@ -5594,6 +5663,10 @@ async fn hermes_connection_json(
     path: &str,
     body: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, AppError> {
+    // ADR-0140: a settings change runs outside the jail, by the app.
+    if admin_once::runs_outside_jail(&method, path) {
+        return admin_once::run(connection, method, path, body).await;
+    }
     let url = format!("{}{}", connection.base_url, path);
     // Exceed Hermes' own 30s budgets (e.g. the skill hub's parallel
     // source-search timeout) so a slow but successful response — partial
@@ -5943,6 +6016,7 @@ fn record_spawned_hermes_runtime_in_dir(
                 runtime_pid,
                 runtime_start,
                 full_mode,
+                jail_mark: jail_reaper::mark_of(runtime_pid),
             },
         )
     })();
@@ -6066,12 +6140,14 @@ fn reap_orphaned_hermes_runtimes_in_dir(directory: &Path) -> Result<(), AppError
         match action {
             HermesOwnershipAction::Skip => {}
             HermesOwnershipAction::DeleteStale => {
+                jail_reaper::reap_an_earlier_run(record.jail_mark.as_deref());
                 remove_hermes_ownership_record(Some(&path)).map_err(|error| {
                     AppError::new("hermes_runtime_reap_failed", error.to_string())
                 })?;
             }
             HermesOwnershipAction::Reap => {
                 kill_process_group(record.runtime_pid);
+                jail_reaper::reap_an_earlier_run(record.jail_mark.as_deref());
                 if !wait_for_recorded_hermes_runtime_exit(
                     record.runtime_pid,
                     &record.runtime_start,
@@ -6130,10 +6206,13 @@ fn wait_for_recorded_hermes_runtime_exit(
 /// Best-effort SIGKILL to a whole process group, addressed by the leader's pid
 /// (a negative target is a process group). Shells out to `/bin/kill` to stay
 /// dependency-free, matching the module's other system-utility spawns. Only
-/// meaningful for a child spawned with `process_group(0)`, whose pid is its
-/// group id.
+/// meaningful for a child started in its own session
+/// (`sandbox_profile::own_session`), whose pid is its group id.
 #[cfg(unix)]
 fn kill_process_group(pid: u32) {
+    // What a jailed runtime started outside its group, gathered while the
+    // parent links still lead there (ADR-0140, D5).
+    let doomed = jail_reaper::doomed_with(pid);
     let _ = Command::new("/bin/kill")
         .arg("-KILL")
         .arg(format!("-{pid}"))
@@ -6141,6 +6220,7 @@ fn kill_process_group(pid: u32) {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
+    doomed.kill();
 }
 
 async fn resolve_hermes_command(
@@ -6555,71 +6635,6 @@ fn apply_isolated_hermes_env(
     crate::win_console::hide_console(cmd);
 }
 
-/// Builds the Seatbelt profile, writes it to disk, and returns the path to hand
-/// to `sandbox-exec -f`. Returns `None` — meaning "spawn unsandboxed" — on
-/// non-macOS, when `sandbox-exec` is absent, when the escape-hatch env var is
-/// set, or if the profile can't be written. Callers treat `None` as "not
-/// sandboxed" and surface that honestly in the UI.
-///
-/// The profile is written to `app_data_dir` itself, deliberately *outside* every
-/// granted write root (the `hermes/` and `hermes-runtime/` subdirs), so the
-/// jailed agent can't rewrite the policy that governs it or the one the next
-/// spawn will read.
-#[cfg(target_os = "macos")]
-fn prepare_sandbox(
-    app: &AppHandle,
-    hermes_home: &Path,
-    agent_cli_access: bool,
-    working_dir: Option<&Path>,
-) -> Option<PathBuf> {
-    // The caller logs the sandboxed/unsandboxed outcome; this only short-circuits.
-    if env_flag_enabled(JUNE_HERMES_DISABLE_SANDBOX_ENV) {
-        return None;
-    }
-    if !Path::new(SANDBOX_EXEC_PATH).exists() {
-        return None;
-    }
-    let home = std::env::var_os("HOME").map(PathBuf::from)?;
-    let runtime_dir = managed_hermes_runtime_dir(app).ok()?;
-    let write_roots = sandbox_write_roots(hermes_home, &runtime_dir);
-    let config_write_path = sandbox_config_write_path(hermes_home);
-    let config_temp_prefix = sandbox_config_temp_prefix(hermes_home);
-    // `working_dir` only ever arrives here through
-    // `hermes_working_dir::validate_working_dir` (the spawn re-validates on
-    // every start) — this is the "explicit, validated grant" that lets the
-    // jail span one user-picked folder without ever widening past it.
-    let profile = build_sandbox_profile(
-        &home,
-        &write_roots,
-        &config_write_path,
-        &config_temp_prefix,
-        agent_cli_access,
-        working_dir,
-    );
-    let app_data_dir = crate::app_paths::app_data_dir(app).ok()?;
-    if std::fs::create_dir_all(&app_data_dir).is_err() {
-        return None;
-    }
-    let profile_path = app_data_dir.join("hermes-sandbox.sb");
-    match std::fs::write(&profile_path, profile) {
-        Ok(()) => Some(profile_path),
-        Err(error) => {
-            eprintln!("Could not write Hermes sandbox profile, spawning unsandboxed: {error}");
-            None
-        }
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn prepare_sandbox(
-    _app: &AppHandle,
-    _hermes_home: &Path,
-    _agent_cli_access: bool,
-    _working_dir: Option<&Path>,
-) -> Option<PathBuf> {
-    None
-}
-
 fn agent_cli_access_flag_path(app: &AppHandle) -> Option<PathBuf> {
     crate::app_paths::app_data_dir(app)
         .ok()
@@ -6660,257 +6675,6 @@ fn env_flag_enabled(name: &str) -> bool {
         }
         Err(_) => false,
     }
-}
-
-/// Directories the jailed agent may write to. Everything else is read-only.
-/// Paths are canonicalized so `subpath` rules match the realpaths the kernel
-/// enforces against (macOS resolves `/tmp` -> `/private/tmp` and `$TMPDIR`
-/// under `/private/var/folders`).
-///
-/// Deliberately scoped to `$TMPDIR` (this app's per-session temp dir) rather
-/// than the whole `/private/var/folders` tree, which is the parent of every
-/// other app's caches too. The session cwd is intentionally *not* a write root:
-/// it defaults to the workspace (already under `hermes_home`), and a non-default
-/// cwd is user-influenced, so granting it write would let the jail span an
-/// arbitrary directory — a project-dir feature would need an explicit, validated
-/// grant instead.
-#[cfg(target_os = "macos")]
-fn sandbox_write_roots(hermes_home: &Path, runtime_dir: &Path) -> Vec<PathBuf> {
-    let mut roots = vec![
-        hermes_home.to_path_buf(),
-        runtime_dir.to_path_buf(),
-        // Shared temp dirs, used mainly as a fallback when $TMPDIR is unset.
-        PathBuf::from("/private/tmp"),
-        PathBuf::from("/private/var/tmp"),
-    ];
-    // The per-session temp dir (resolves under /private/var/folders). The Python
-    // runtime and its children use it for scratch files and multiprocessing
-    // sockets; scoping to it keeps other apps' caches out of the jail.
-    if let Some(tmpdir) = std::env::var_os("TMPDIR") {
-        if !tmpdir.is_empty() {
-            roots.push(PathBuf::from(tmpdir));
-        }
-    }
-    let mut canonical: Vec<PathBuf> = Vec::with_capacity(roots.len());
-    for root in roots {
-        let resolved = std::fs::canonicalize(&root).unwrap_or(root);
-        if !canonical.contains(&resolved) {
-            canonical.push(resolved);
-        }
-    }
-    canonical
-}
-
-/// The Hermes config file the jailed runtime persists through `save_config`,
-/// as an absolute path under `$HERMES_HOME`. Returned separately from the broad
-/// write roots so the grant is auditable and scoped to exactly this one file.
-#[cfg(target_os = "macos")]
-fn sandbox_config_write_path(hermes_home: &Path) -> PathBuf {
-    hermes_home.join(HERMES_CONFIG_FILE)
-}
-
-/// Absolute atomic-temp prefix for `config.yaml` writes under `$HERMES_HOME`
-/// (e.g. `…/hermes/.config_`). Granted as a regex prefix so the random suffix
-/// in `.config_<random>.tmp` is covered.
-#[cfg(target_os = "macos")]
-fn sandbox_config_temp_prefix(hermes_home: &Path) -> PathBuf {
-    hermes_home.join(HERMES_CONFIG_ATOMIC_TEMP_PREFIX)
-}
-
-/// Renders the Seatbelt (SBPL) profile text. Strategy: allow broadly, because
-/// the embedded Python runtime needs wide syscall, mach-service, and exec
-/// rights and any tighter base brings the runtime down; then deny every write
-/// and re-grant only the app-owned roots, and deny reads of credential stores.
-/// Pure (no IO) so it can be unit-tested.
-#[cfg(target_os = "macos")]
-fn build_sandbox_profile(
-    home: &Path,
-    write_roots: &[PathBuf],
-    config_write_path: &Path,
-    config_temp_prefix: &Path,
-    agent_cli_access: bool,
-    working_dir: Option<&Path>,
-) -> String {
-    let mut out = String::new();
-    out.push_str("(version 1)\n");
-    out.push_str(";; June desktop agent sandbox — generated by June, do not edit.\n");
-    out.push_str(";; Allow broadly (the Python runtime needs wide syscall/mach access and\n");
-    out.push_str(";; must exec interpreters), then carve a hard write-jail and a secret-read\n");
-    out.push_str(";; denylist. Subprocesses inherit this profile.\n");
-    out.push_str("(allow default)\n\n");
-
-    out.push_str(";; Write jail: deny all writes, then re-grant only app-owned roots.\n");
-    out.push_str("(deny file-write*)\n");
-    out.push_str("(allow file-write*\n");
-    for root in write_roots {
-        out.push_str(&format!(
-            "  (subpath {})\n",
-            sbpl_quote(&root.to_string_lossy())
-        ));
-    }
-    out.push_str(")\n\n");
-
-    // June's own config sync (the Rust host, unsandboxed) rewrites config.yaml
-    // at every spawn, but the *sandboxed runtime* also persists it in-session
-    // through Hermes' `save_config` whenever an admin surface mutates skills,
-    // toolsets, or MCP servers. That write is atomic: a `.config_<random>.tmp`
-    // is streamed then `os.replace`d onto config.yaml, which needs write+unlink
-    // on the target and the temp. The temp already lives under a write root
-    // ($HERMES_HOME), but spell out both the config file and its random-suffixed
-    // temp prefix explicitly so the grant is auditable and survives any future
-    // tightening of the broad roots. Nothing outside $HERMES_HOME is widened.
-    out.push_str(";; Hermes' own config.yaml: the jailed runtime persists admin changes\n");
-    out.push_str(";; through save_config (atomic temp + os.replace). Grant the file and its\n");
-    out.push_str(";; random-suffixed atomic temp; everything else stays under the write jail.\n");
-    out.push_str("(allow file-write*\n");
-    out.push_str(&format!(
-        "  (literal {})\n",
-        sbpl_quote(&config_write_path.to_string_lossy())
-    ));
-    out.push_str(&format!(
-        "  (regex #\"^{}.*$\")\n",
-        sbpl_regex_escape(&config_temp_prefix.to_string_lossy())
-    ));
-    out.push_str(")\n\n");
-
-    if let Some(working_dir) = working_dir {
-        // The one user-directory grant, and it exists only because
-        // `validate_working_dir` accepted this exact canonical path (the
-        // spawn re-validates every start). The trailing secret write-deny
-        // below still outranks it, so even a folder that somehow gained a
-        // credential store keeps those paths unwritable.
-        out.push_str(";; Working folder (per-session, user-picked, validated): the one\n");
-        out.push_str(";; user directory this session may write. See\n");
-        out.push_str(";; docs/adr/0014-per-session-working-folder.md.\n");
-        out.push_str("(allow file-write*\n");
-        out.push_str(&format!(
-            "  (subpath {})\n",
-            sbpl_quote(&working_dir.to_string_lossy())
-        ));
-        out.push_str(")\n\n");
-    }
-
-    if agent_cli_access {
-        out.push_str(";; Agent CLI state (explicit user opt-in from Settings > Agent):\n");
-        out.push_str(";; lets installed coding CLIs (Claude Code, Codex, Gemini, opencode)\n");
-        out.push_str(";; run under the jail while keeping their sessions and refreshed\n");
-        out.push_str(";; logins. These folders configure tools that later run OUTSIDE the\n");
-        out.push_str(";; sandbox (hooks, settings), which is why this is off by default.\n");
-        out.push_str("(allow file-write*\n");
-        for relative in AGENT_CLI_STATE_DIRS {
-            out.push_str(&format!(
-                "  (subpath {})\n",
-                sbpl_quote(&home.join(relative).to_string_lossy())
-            ));
-        }
-        for prefix in AGENT_CLI_STATE_FILE_PREFIXES {
-            // Prefix regex instead of a literal: the CLIs write these files
-            // atomically through randomly suffixed temp names + rename.
-            out.push_str(&format!(
-                "  (regex #\"^{}.*$\")\n",
-                sbpl_regex_escape(&home.join(prefix).to_string_lossy())
-            ));
-        }
-        out.push_str(")\n\n");
-    }
-
-    out.push_str(";; Character devices and pipes the runtime needs to write.\n");
-    out.push_str("(allow file-write*\n");
-    for device in [
-        "/dev/null",
-        "/dev/zero",
-        "/dev/dtracehelper",
-        "/dev/tty",
-        "/dev/stdout",
-        "/dev/stderr",
-        "/dev/random",
-        "/dev/urandom",
-    ] {
-        out.push_str(&format!("  (literal {})\n", sbpl_quote(device)));
-    }
-    out.push_str("  (regex #\"^/dev/fd/[0-9]+$\")\n");
-    out.push_str("  (regex #\"^/dev/ttys[0-9]+$\")\n");
-    out.push_str(")\n\n");
-
-    out.push_str(";; Secret-read denylist: reads are otherwise open so June can work on\n");
-    out.push_str(";; the user's files, but credential stores stay off-limits.\n");
-    out.push_str("(deny file-read*\n");
-    for relative in crate::hermes_working_dir::SECRET_STORE_DIRS {
-        out.push_str(&format!(
-            "  (subpath {})\n",
-            sbpl_quote(&home.join(relative).to_string_lossy())
-        ));
-    }
-    out.push_str("  (subpath \"/Library/Keychains\")\n");
-    for relative in crate::hermes_working_dir::SECRET_STORE_FILES {
-        out.push_str(&format!(
-            "  (literal {})\n",
-            sbpl_quote(&home.join(relative).to_string_lossy())
-        ));
-    }
-    out.push_str(")\n\n");
-
-    // Last on purpose: in SBPL the later rule wins, so this deny outranks
-    // every write grant above it. Working-dir validation already refuses
-    // folders that contain (or live inside) a credential store; this is the
-    // second, kernel-level line for the same invariant — no grant, present
-    // or future, may make a credential store writable.
-    out.push_str(";; Secret-write denylist: credential stores stay unwritable even when a\n");
-    out.push_str(";; write grant above (workspace, working folder, CLI state) spans them.\n");
-    out.push_str("(deny file-write*\n");
-    for relative in crate::hermes_working_dir::SECRET_STORE_DIRS {
-        out.push_str(&format!(
-            "  (subpath {})\n",
-            sbpl_quote(&home.join(relative).to_string_lossy())
-        ));
-    }
-    out.push_str("  (subpath \"/Library/Keychains\")\n");
-    for relative in crate::hermes_working_dir::SECRET_STORE_FILES {
-        out.push_str(&format!(
-            "  (literal {})\n",
-            sbpl_quote(&home.join(relative).to_string_lossy())
-        ));
-    }
-    out.push_str(")\n");
-    out
-}
-
-/// Quotes a string as an SBPL literal: wrap in double quotes, backslash-escape
-/// embedded quotes and backslashes. Spaces (e.g. "Application Support") are
-/// fine inside the quotes.
-#[cfg(target_os = "macos")]
-fn sbpl_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('"');
-    for ch in value.chars() {
-        if ch == '\\' || ch == '"' {
-            quoted.push('\\');
-        }
-        quoted.push(ch);
-    }
-    quoted.push('"');
-    quoted
-}
-
-/// Escapes a path for embedding in an SBPL `(regex #"...")` pattern so it
-/// matches itself literally — dots in file names and any other regex
-/// metacharacters must not widen the grant.
-fn sbpl_regex_escape(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for ch in value.chars() {
-        if matches!(
-            ch,
-            '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '^' | '$' | '|'
-        ) {
-            escaped.push('\\');
-        }
-        if ch == '"' {
-            // SBPL string layer: a quote would end the #"..." pattern.
-            escaped.push('\\');
-        }
-        escaped.push(ch);
-    }
-    escaped
 }
 
 pub(crate) fn resolve_june_hermes_home(app: &AppHandle) -> Result<PathBuf, AppError> {
@@ -7065,7 +6829,12 @@ fn write_june_web_proxy_coordinates(path: &Path, contents: &str) -> std::io::Res
     let tmp_path = path.with_extension("json.tmp");
     {
         use std::io::Write as _;
-        let mut file = fs::File::create(&tmp_path)?;
+        // A new file, never what stands at the name (ADR-0140).
+        let _ = fs::remove_file(&tmp_path);
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
@@ -7121,12 +6890,21 @@ async fn sync_hermes_config(
 ) -> Result<(), AppError> {
     let model = crate::providers::generation_model();
     let base_url = format!("http://127.0.0.1:{provider_proxy_port}/v1");
+    // ADR-0140: the settings a person made in Settings, kept by the app.
+    let overlay = admin_settings::load(hermes_home).config;
+    let mut skill_dirs = external_skill_dirs.to_vec();
+    // The skills a person installs land in the shared home; the sandboxed
+    // runtime reads them there (it cannot write them).
+    let shared_skills = home_split::shared_home(hermes_home).join("skills");
+    if hermes_home != home_split::shared_home(hermes_home) && !skill_dirs.contains(&shared_skills) {
+        skill_dirs.push(shared_skills);
+    }
     let config = render_hermes_config(
         &model,
         &base_url,
         provider_proxy_token,
         &builtin_mcp::cron_toolsets(CRON_SANDBOXED_TOOLSETS),
-        external_skill_dirs,
+        &skill_dirs,
         // Catalog-sourced, never assumed: an unreachable catalog writes no key
         // and leaves Hermes on its own detection (see the function's docs).
         crate::providers::generation_model_supports_vision().await,
@@ -7136,8 +6914,14 @@ async fn sync_hermes_config(
         Some(june_studio_mcp),
     );
     let guard = guard::config_block(crate::protected_mode::restrictions().memory_off);
-    std::fs::write(hermes_home.join("config.yaml"), config + &guard)
-        .map_err(|error| AppError::new("hermes_bridge_config_failed", error.to_string()))
+    let base = config + &guard;
+    // Kept so a settings change can write this home's file again (ADR-0140).
+    std::fs::write(admin_settings::base_path(hermes_home), &base)
+        .map_err(|error| AppError::new("hermes_bridge_config_failed", error.to_string()))?;
+    let config = admin_settings::apply_overlay(base, &overlay);
+    home_prep::write_owned(&hermes_home.join("config.yaml"), &config)
+        .map_err(|error| AppError::new("hermes_bridge_config_failed", error.to_string()))?;
+    home_prep::prepare(hermes_home)
 }
 
 /// Renders the `config.yaml` June owns for every Hermes spawn. Pure so the
@@ -7200,13 +6984,15 @@ fn render_hermes_config(
 {agent_vision_line}  max_turns: 200
   gateway_timeout: 7200
   gateway_timeout_warning: 3600
-  gateway_auto_continue_freshness: 10800
+  gateway_auto_continue_freshness: 1
 {RUNTIME_DISABLED_TOOLSETS}approvals:
   mode: manual
   cron_mode: deny
 display:
   skin: mono
   busy_input_mode: queue
+gateway:
+  delivery_ledger: false
 platform_toolsets:
   cron: [{cron_toolsets}]
 skills:
@@ -7298,7 +7084,7 @@ fn sync_june_soul(
     } else {
         format!("{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_BLOCKS_MD}{data_section}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_STUDIO_MD}")
     };
-    std::fs::write(hermes_home.join("SOUL.md"), soul)
+    home_prep::write_owned(&hermes_home.join("SOUL.md"), &soul)
         .map_err(|error| AppError::new("hermes_bridge_soul_failed", error.to_string()))
 }
 
@@ -7311,27 +7097,43 @@ struct FilesystemRootCandidate {
 
 fn filesystem_roots(hermes_home: &Path) -> Result<Vec<FilesystemRootCandidate>, AppError> {
     let mut roots = Vec::new();
-    for (id, label, relative, description) in [
+    // ADR-0140: sandboxed sessions work in their own home's workspace, the
+    // unrestricted ones (and uploads) in the shared home's.
+    let sandboxed = home_split::sandboxed_home(hermes_home);
+    let shared = home_split::shared_home(hermes_home);
+    for (id, label, home, relative, description) in [
         (
             "workspace",
             "Workspace",
+            &sandboxed,
             "workspace",
-            "Hermes scratch files and generated outputs.",
+            "Files of sandboxed sessions and what they produce.",
+        ),
+        (
+            "workspace-unrestricted",
+            "Unrestricted workspace",
+            &shared,
+            "workspace",
+            "Files of unrestricted sessions, and the files you attach.",
         ),
         (
             "memory",
             "Memory",
+            &shared,
             "memories",
-            "Persistent Hermes memory files and stores.",
+            "The assistant's memory files.",
         ),
     ] {
         roots.push(FilesystemRootCandidate {
             id: id.to_string(),
             label: label.to_string(),
-            path: hermes_home.join(relative),
+            path: home.join(relative),
             description: description.to_string(),
         });
     }
+    // A root the jail turned into a link would carry every read through it
+    // out of the home (ADR-0140): only a real folder is a root.
+    roots.retain(|root| !home_prep::is_link(&root.path));
     Ok(dedupe_filesystem_roots(roots))
 }
 
@@ -8262,6 +8064,8 @@ async fn wait_for_hermes(base_url: &str, token: &str) -> Result<(), AppError> {
     ))
 }
 
+mod admin_once;
+mod admin_settings;
 mod builtin_mcp;
 mod connectors_mcp;
 mod gateway_label;
@@ -8273,10 +8077,23 @@ use builtin_mcp::{
     JuneWebMcpConfig, RUNTIME_DISABLED_TOOLSETS,
 };
 pub mod guard;
+mod home_prep;
+pub(crate) mod home_split;
+mod jail_reaper;
+mod jail_reaper_gate;
+#[cfg(test)]
+#[cfg(target_os = "macos")]
+mod jail_runtime_tests;
+pub(crate) mod jailed_git;
 mod local_reads;
+mod mcp_login;
+mod mcp_oauth_origin;
 mod project_memory;
 mod provider_proxy;
 use provider_proxy::provider_models_body;
+pub mod quarantine;
+mod sandbox_profile;
+pub mod session_owner;
 
 #[cfg(test)]
 mod config_tests;
@@ -8417,6 +8234,7 @@ mod tests {
             runtime_pid,
             runtime_start: runtime_start.into(),
             full_mode,
+            jail_mark: None,
         }
     }
 
@@ -8513,6 +8331,7 @@ mod tests {
             runtime_pid: child.id(),
             runtime_start: hermes_test_started_at(child.id()),
             full_mode: false,
+            jail_mark: None,
         };
         let path = write_hermes_runtime_ownership_record(directory.path(), &record)
             .expect("write ownership record");
@@ -8821,27 +8640,20 @@ mod tests {
     }
 
     #[test]
-    fn mcp_login_command_passes_server_as_discrete_argument() {
-        let connection = oauth_test_connection();
-        let cmd = build_hermes_mcp_login_command(&connection, "linear", Some("work"));
-        let program = cmd.get_program().to_string_lossy().to_string();
-        let args: Vec<String> = cmd
-            .get_args()
-            .map(|a| a.to_string_lossy().to_string())
-            .collect();
-        assert_eq!(program, "/usr/local/bin/hermes");
-        assert_eq!(args, vec!["mcp", "login", "linear", "--profile", "work"]);
-    }
-
-    #[test]
-    fn mcp_login_command_omits_profile_when_none() {
-        let connection = oauth_test_connection();
-        let cmd = build_hermes_mcp_login_command(&connection, "linear", None);
-        let args: Vec<String> = cmd
-            .get_args()
-            .map(|a| a.to_string_lossy().to_string())
-            .collect();
-        assert_eq!(args, vec!["mcp", "login", "linear"]);
+    fn the_runtime_starts_on_the_default_profile() {
+        assert_eq!(
+            dashboard_args("4242"),
+            [
+                "--profile",
+                "default",
+                "dashboard",
+                "--no-open",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "4242"
+            ]
+        );
     }
 
     #[test]
@@ -8865,18 +8677,28 @@ mod tests {
             .map(|a| a.to_string_lossy().to_string())
             .collect();
         assert_eq!(program, "/usr/local/bin/hermes");
-        assert_eq!(args, vec!["skills", "reset", "pdf", "--profile", "work"]);
+        assert_eq!(args, vec!["skills", "reset", "pdf", "--profile", "default"]);
     }
 
     #[test]
-    fn skill_reset_command_adds_restore_flag_and_omits_profile() {
+    fn skill_reset_command_adds_restore_flag_and_names_the_default_profile() {
         let connection = oauth_test_connection();
         let cmd = build_hermes_skill_reset_command(&connection, "pdf", true, None);
         let args: Vec<String> = cmd
             .get_args()
             .map(|a| a.to_string_lossy().to_string())
             .collect();
-        assert_eq!(args, vec!["skills", "reset", "pdf", "--restore"]);
+        assert_eq!(
+            args,
+            vec![
+                "skills",
+                "reset",
+                "pdf",
+                "--restore",
+                "--profile",
+                "default"
+            ]
+        );
     }
 
     #[test]
@@ -8891,7 +8713,7 @@ mod tests {
     }
 
     #[test]
-    fn skill_tap_list_command_passes_profile_as_discrete_argument() {
+    fn skill_tap_list_command_names_the_default_profile() {
         let connection = oauth_test_connection();
         let cmd = build_hermes_skill_tap_command(&connection, "list", None, None, Some("work"));
         let program = cmd.get_program().to_string_lossy().to_string();
@@ -8900,7 +8722,7 @@ mod tests {
             .map(|a| a.to_string_lossy().to_string())
             .collect();
         assert_eq!(program, "/usr/local/bin/hermes");
-        assert_eq!(args, vec!["skills", "tap", "list", "--profile", "work"]);
+        assert_eq!(args, vec!["skills", "tap", "list", "--profile", "default"]);
     }
 
     #[test]
@@ -8925,13 +8747,15 @@ mod tests {
                 "add",
                 "acme/runbooks",
                 "--path",
-                "skills/ops"
+                "skills/ops",
+                "--profile",
+                "default"
             ]
         );
     }
 
     #[test]
-    fn skill_tap_remove_command_omits_path_and_profile() {
+    fn skill_tap_remove_command_omits_path() {
         let connection = oauth_test_connection();
         let cmd = build_hermes_skill_tap_command(
             &connection,
@@ -8944,7 +8768,17 @@ mod tests {
             .get_args()
             .map(|a| a.to_string_lossy().to_string())
             .collect();
-        assert_eq!(args, vec!["skills", "tap", "remove", "acme/runbooks"]);
+        assert_eq!(
+            args,
+            vec![
+                "skills",
+                "tap",
+                "remove",
+                "acme/runbooks",
+                "--profile",
+                "default"
+            ]
+        );
     }
 
     #[test]
@@ -9274,12 +9108,14 @@ mod tests {
     ///   gateway's inactivity kill (`gateway/run.py`; the TUI channel never
     ///   reads it). Governs Routines/cron agent runs stuck in one long tool
     ///   call. Kept non-zero so a truly wedged agent still gets evicted.
-    /// - `gateway_auto_continue_freshness` 3600 → 10800: must stay LARGER
-    ///   than `gateway_timeout` — the freshness window decides whether an
-    ///   interrupted platform-gateway turn auto-resumes on the next message,
-    ///   so a window shorter than the timeout would classify every
-    ///   timeout-adjacent interruption as stale and silently drop the resume
-    ///   (upstream's 3600 covers its 1800 default the same way).
+    /// - `gateway_auto_continue_freshness` 1 (ADR-0140, was 10800): the
+    ///   gateway, outside the jail, re-runs on its own at startup the turns
+    ///   its session store marks interrupted, from `sessions/` and
+    ///   `state.db`, which the jail writes. Until the homes are split, no
+    ///   interrupted turn is fresh: nothing resumes without a person. Not
+    ///   0, which the runtime reads as "always fresh". `gateway.
+    ///   delivery_ledger: false` likewise stops it re-sending stored answers
+    ///   from `state.db` to a messaging chat at startup.
     #[test]
     fn render_hermes_config_extends_long_run_budgets() {
         let config = render_hermes_config(
@@ -9296,8 +9132,9 @@ mod tests {
         );
 
         assert!(config.contains(
-            "agent:\n  max_turns: 200\n  gateway_timeout: 7200\n  gateway_timeout_warning: 3600\n  gateway_auto_continue_freshness: 10800\n"
+            "agent:\n  max_turns: 200\n  gateway_timeout: 7200\n  gateway_timeout_warning: 3600\n  gateway_auto_continue_freshness: 1\n"
         ));
+        assert!(config.contains("gateway:\n  delivery_ledger: false\n"));
     }
 
     /// An attached photo reached the model as base64 *text* and blew the
@@ -9602,9 +9439,10 @@ mod tests {
         if cfg!(windows) {
             // Windows must go through `install`: `start` on a never-installed
             // service prompts, and Hermes' prompt_yes_no exits on stdin EOF.
-            assert_eq!(args, ["gateway", "install"]);
+            assert_eq!(args, ["--profile", "default", "gateway", "install"]);
         } else {
-            assert_eq!(args, ["gateway", "start"]);
+            // ADR-0140: never a sticky `active_profile`.
+            assert_eq!(args, ["--profile", "default", "gateway", "start"]);
         }
         let envs: std::collections::HashMap<String, String> = cmd
             .get_envs()
@@ -9645,14 +9483,18 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     #[tokio::test]
     async fn gateway_start_reports_nonzero_exit() {
-        let home = tempfile::tempdir().expect("tempdir");
+        let data = tempfile::tempdir().expect("tempdir");
+        // The gateway runs in the shared home (ADR-0140), here beside the
+        // sandboxed one the connection serves.
+        std::fs::create_dir_all(data.path().join(home_split::SHARED_HOME)).expect("shared home");
+        let home = data.path().join(home_split::SANDBOXED_HOME);
         let connection = HermesBridgeConnection {
             base_url: "http://127.0.0.1:1".to_string(),
             ws_url: "ws://127.0.0.1:1/api/ws".to_string(),
             token: "session-token".to_string(),
             port: 1,
             command: "/usr/bin/false".to_string(),
-            hermes_home: home.path().to_string_lossy().into_owned(),
+            hermes_home: home.to_string_lossy().into_owned(),
             cwd: None,
             working_dir: None,
             provider_proxy_port: 2,
@@ -9789,6 +9631,10 @@ mod tests {
         )));
         // Stale inherited values are scrubbed first.
         assert!(script.contains("unset HERMES_HOME"));
+        // The jail's environment, as for the dashboard runtime (B2).
+        assert!(script.contains("unset SSH_AUTH_SOCK"));
+        assert!(script.contains("export TMPDIR="));
+        assert!(script.contains("export SUBROSA_JAIL_MARK='jail-"));
         // The session->TUI trace line is echoed in the terminal.
         assert!(script.contains("echo 'trace: june session sess-1'"));
     }
@@ -9810,6 +9656,7 @@ mod tests {
         // No jail => no sandbox-exec wrapper; the runtime is launched directly.
         assert!(script.contains("exec '/opt/hermes/bin/hermes' '--tui' '--resume' 'sess-2'"));
         assert!(!script.contains(SANDBOX_EXEC_PATH));
+        assert!(!script.contains("SUBROSA_JAIL_MARK"));
         assert!(script.contains(&format!(
             "export HERMES_ENVIRONMENT_HINT={}",
             shell_single_quote(JUNE_HINT_UNRESTRICTED)
@@ -10412,418 +10259,6 @@ mod tests {
                 .expect_err("invalid skill name");
             assert_eq!(err.code, "hermes_skill_name_invalid");
         }
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn write_roots_are_scoped_and_exclude_the_var_folders_blanket() {
-        let hermes_home = PathBuf::from("/Users/test/Library/Application Support/june/hermes");
-        let runtime_dir = PathBuf::from("/Users/test/Library/Application Support/june/runtime");
-        let roots = sandbox_write_roots(&hermes_home, &runtime_dir);
-
-        assert!(roots.contains(&hermes_home), "workspace root missing");
-        assert!(roots.contains(&runtime_dir), "runtime root missing");
-        // The blanket /private/var/folders (parent of every app's caches) must
-        // not be a write root — only this app's $TMPDIR may slip under it.
-        assert!(
-            !roots.contains(&PathBuf::from("/private/var/folders")),
-            "must not grant the whole /private/var/folders tree"
-        );
-        // No root may be the home dir or a filesystem root — the jail must never
-        // span the user's whole account (regression guard for the dropped cwd).
-        for root in &roots {
-            assert!(root != &PathBuf::from("/"), "root / granted");
-            assert!(
-                !root.to_string_lossy().eq("/Users/test"),
-                "home dir granted as a write root"
-            );
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn sandbox_profile_jails_writes_to_allowed_roots() {
-        let home = PathBuf::from("/Users/test");
-        let workspace = PathBuf::from("/Users/test/Library/Application Support/june/hermes");
-        let config_path = sandbox_config_write_path(&workspace);
-        let config_temp_prefix = sandbox_config_temp_prefix(&workspace);
-        let profile = build_sandbox_profile(
-            &home,
-            std::slice::from_ref(&workspace),
-            &config_path,
-            &config_temp_prefix,
-            false,
-            None,
-        );
-
-        // Allow-everything base, then a hard write-jail re-granting the root.
-        assert!(profile.contains("(allow default)"));
-        assert!(profile.contains("(deny file-write*)"));
-        assert!(
-            profile.contains("(subpath \"/Users/test/Library/Application Support/june/hermes\")")
-        );
-        // The sandboxed runtime owns config.yaml: it must be able to persist
-        // admin mutations through save_config's atomic temp + os.replace.
-        assert!(profile.contains(
-            "(literal \"/Users/test/Library/Application Support/june/hermes/config.yaml\")"
-        ));
-        // The atomic temp is granted via a prefix regex (random suffix), with
-        // the path's dots escaped so the grant can't widen.
-        assert!(profile.contains(
-            "(regex #\"^/Users/test/Library/Application Support/june/hermes/\\.config_.*$\")"
-        ));
-        // The re-grant must come after the blanket write deny, or it's a no-op.
-        let deny_at = profile.find("(deny file-write*)").expect("deny present");
-        let grant_at = profile
-            .find("(allow file-write*\n  (subpath")
-            .expect("grant present");
-        assert!(deny_at < grant_at);
-        let config_grant_at = profile
-            .find(";; Hermes' own config.yaml: the jailed runtime persists admin changes")
-            .expect("config grant present");
-        assert!(deny_at < config_grant_at);
-
-        // Credential stores stay unreadable even though reads are otherwise open.
-        assert!(profile.contains("(deny file-read*"));
-        assert!(profile.contains("(subpath \"/Users/test/.ssh\")"));
-        assert!(profile.contains("(subpath \"/Users/test/Library/Keychains\")"));
-
-        // Without the opt-in, no agent CLI state dir is writable.
-        assert!(!profile.contains(".claude"));
-        assert!(!profile.contains(".codex"));
-        assert!(!profile.contains(".gemini"));
-        assert!(!profile.contains("opencode"));
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn sandbox_profile_opt_in_grants_agent_cli_state_only() {
-        let home = PathBuf::from("/Users/test");
-        let workspace = PathBuf::from("/Users/test/Library/Application Support/june/hermes");
-        let config_path = sandbox_config_write_path(&workspace);
-        let config_temp_prefix = sandbox_config_temp_prefix(&workspace);
-        let profile = build_sandbox_profile(
-            &home,
-            std::slice::from_ref(&workspace),
-            &config_path,
-            &config_temp_prefix,
-            true,
-            None,
-        );
-
-        // The CLI state dirs become writable...
-        assert!(profile.contains("(subpath \"/Users/test/.claude\")"));
-        assert!(profile.contains("(subpath \"/Users/test/.codex\")"));
-        assert!(profile.contains("(subpath \"/Users/test/.gemini\")"));
-        assert!(profile.contains("(subpath \"/Users/test/.config/opencode\")"));
-        // ...including Claude Code's atomically written top-level config (a
-        // prefix regex, because writes go through random temp suffixes), with
-        // the path's dots escaped so the grant can't widen.
-        assert!(profile.contains("(regex #\"^/Users/test/\\.claude\\.json.*$\")"));
-
-        // The jail and the secret-read denylist are unchanged.
-        assert!(profile.contains("(deny file-write*)"));
-        assert!(profile.contains("(subpath \"/Users/test/.ssh\")"));
-        assert!(profile.contains("(subpath \"/Users/test/Library/Keychains\")"));
-        // The CLI grant must come after the blanket write deny to take effect.
-        let deny_at = profile.find("(deny file-write*)").expect("deny present");
-        let cli_grant_at = profile
-            .find("(subpath \"/Users/test/.claude\")")
-            .expect("cli grant present");
-        assert!(deny_at < cli_grant_at);
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn sbpl_regex_escape_neutralizes_metacharacters() {
-        assert_eq!(
-            sbpl_regex_escape("/Users/test/.claude.json"),
-            "/Users/test/\\.claude\\.json"
-        );
-        assert_eq!(sbpl_regex_escape("a+b(c)[d]"), "a\\+b\\(c\\)\\[d\\]");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn sbpl_quote_escapes_quotes_and_backslashes() {
-        assert_eq!(sbpl_quote("/plain/path"), "\"/plain/path\"");
-        assert_eq!(sbpl_quote("/with space/x"), "\"/with space/x\"");
-        assert_eq!(sbpl_quote("a\"b\\c"), "\"a\\\"b\\\\c\"");
-    }
-
-    /// Runs the *actual* generated profile through the kernel via `sandbox-exec`
-    /// to prove it's valid SBPL and enforces the jail — not just that the string
-    /// looks right. Catches malformed regexes, bad escaping, or rule ordering
-    /// that a string-content assertion would miss.
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn generated_profile_is_enforced_by_the_kernel() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        // Canonicalize so the profile's subpaths match the realpaths the kernel
-        // resolves (/var/folders -> /private/var/folders).
-        let home = std::fs::canonicalize(dir.path()).expect("canonicalize home");
-        let workspace = home.join("workspace");
-        std::fs::create_dir_all(&workspace).expect("create workspace");
-        std::fs::create_dir_all(home.join(".ssh")).expect("create .ssh");
-        std::fs::write(home.join(".ssh").join("id_secret"), "TOPSECRET").expect("seed secret");
-
-        let config_path = sandbox_config_write_path(&workspace);
-        let config_temp_prefix = sandbox_config_temp_prefix(&workspace);
-        let profile_text = build_sandbox_profile(
-            &home,
-            std::slice::from_ref(&workspace),
-            &config_path,
-            &config_temp_prefix,
-            false,
-            None,
-        );
-        let profile_path = home.join("test.sb");
-        std::fs::write(&profile_path, &profile_text).expect("write profile");
-
-        let run = |script: &str| {
-            std::process::Command::new(SANDBOX_EXEC_PATH)
-                .arg("-f")
-                .arg(&profile_path)
-                .arg("/bin/bash")
-                .arg("-c")
-                .arg(script)
-                .output()
-                .expect("run sandbox-exec")
-        };
-
-        // Allowed: write inside the workspace root.
-        let inside = workspace.join("ok.txt");
-        let out = run(&format!("echo ok > {}", sbpl_shell_quote(&inside)));
-        assert!(
-            out.status.success() && inside.exists(),
-            "workspace write should be allowed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        // Allowed: the sandboxed runtime persists its own config.yaml through
-        // save_config — a directly written file must succeed.
-        let config = workspace.join("config.yaml");
-        let out = run(&format!("echo cfg > {}", sbpl_shell_quote(&config)));
-        assert!(
-            out.status.success() && config.exists(),
-            "direct config write should be allowed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        std::fs::remove_file(&config).expect("reset config");
-
-        // Allowed: the real save_config path — stream a random-suffixed
-        // `.config_<random>.tmp` then os.replace (mv) it onto config.yaml. This
-        // is the exact operation the jail denied before, breaking every admin
-        // mutation with an HTTP 500.
-        let config_tmp = workspace.join(".config_vsc99h39.tmp");
-        let out = run(&format!(
-            "echo cfg > {tmp} && mv {tmp} {config}",
-            tmp = sbpl_shell_quote(&config_tmp),
-            config = sbpl_shell_quote(&config),
-        ));
-        assert!(
-            out.status.success() && config.exists(),
-            "atomic config replacement should be allowed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        // Denied: write outside the workspace (home root is not a write root here).
-        let outside = home.join("escaped.txt");
-        run(&format!("echo bad > {}", sbpl_shell_quote(&outside)));
-        assert!(
-            !outside.exists(),
-            "write outside the jail must be denied, but the file was created"
-        );
-
-        // Denied: read a credential store even though reads are otherwise open.
-        let out = run(&format!(
-            "cat {}",
-            sbpl_shell_quote(&home.join(".ssh").join("id_secret"))
-        ));
-        assert!(
-            !String::from_utf8_lossy(&out.stdout).contains("TOPSECRET"),
-            "secret read must be denied, but the contents leaked"
-        );
-    }
-
-    /// Same kernel-level proof for the Agent CLI access opt-in: the CLI state
-    /// paths become writable (including Claude Code's atomic temp-name
-    /// config writes) while the rest of the jail holds.
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn cli_access_profile_is_enforced_by_the_kernel() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let home = std::fs::canonicalize(dir.path()).expect("canonicalize home");
-        let workspace = home.join("workspace");
-        std::fs::create_dir_all(&workspace).expect("create workspace");
-
-        let config_path = sandbox_config_write_path(&workspace);
-        let config_temp_prefix = sandbox_config_temp_prefix(&workspace);
-        let profile_text = build_sandbox_profile(
-            &home,
-            std::slice::from_ref(&workspace),
-            &config_path,
-            &config_temp_prefix,
-            true,
-            None,
-        );
-        let profile_path = home.join("test.sb");
-        std::fs::write(&profile_path, &profile_text).expect("write profile");
-
-        let run = |script: &str| {
-            std::process::Command::new(SANDBOX_EXEC_PATH)
-                .arg("-f")
-                .arg(&profile_path)
-                .arg("/bin/bash")
-                .arg("-c")
-                .arg(script)
-                .output()
-                .expect("run sandbox-exec")
-        };
-
-        // Allowed: create ~/.claude itself and write session state under it.
-        let claude_state = home.join(".claude").join("session.json");
-        let out = run(&format!(
-            "mkdir -p {} && echo state > {}",
-            sbpl_shell_quote(&home.join(".claude")),
-            sbpl_shell_quote(&claude_state)
-        ));
-        assert!(
-            out.status.success() && claude_state.exists(),
-            "CLI state write should be allowed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        // Allowed: the atomic config write pattern (temp suffix + rename).
-        let config_tmp = home.join(".claude.json.1a2b3c");
-        let config = home.join(".claude.json");
-        let out = run(&format!(
-            "echo cfg > {tmp} && mv {tmp} {cfg}",
-            tmp = sbpl_shell_quote(&config_tmp),
-            cfg = sbpl_shell_quote(&config)
-        ));
-        assert!(
-            out.status.success() && config.exists(),
-            "atomic CLI config write should be allowed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        // Still denied: anything else in the home directory.
-        let outside = home.join("escaped.txt");
-        run(&format!("echo bad > {}", sbpl_shell_quote(&outside)));
-        assert!(
-            !outside.exists(),
-            "write outside the jail must stay denied with CLI access on"
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn sandbox_profile_grants_the_working_folder_and_still_denies_secrets() {
-        let home = PathBuf::from("/Users/test");
-        let workspace = PathBuf::from("/Users/test/Library/Application Support/june/hermes");
-        let working_dir = PathBuf::from("/Users/test/Projects/Un projet");
-        let config_path = sandbox_config_write_path(&workspace);
-        let config_temp_prefix = sandbox_config_temp_prefix(&workspace);
-        let profile = build_sandbox_profile(
-            &home,
-            std::slice::from_ref(&workspace),
-            &config_path,
-            &config_temp_prefix,
-            false,
-            Some(&working_dir),
-        );
-
-        // The validated folder is granted, after the blanket deny.
-        assert!(profile.contains("(subpath \"/Users/test/Projects/Un projet\")"));
-        let deny_at = profile.find("(deny file-write*)").expect("deny present");
-        let grant_at = profile
-            .find("(subpath \"/Users/test/Projects/Un projet\")")
-            .expect("working dir grant present");
-        assert!(deny_at < grant_at);
-        // The secret WRITE deny comes after every grant: in SBPL the later
-        // rule wins, so ordering is the enforcement.
-        let write_deny_at = profile
-            .find(";; Secret-write denylist")
-            .expect("secret write deny present");
-        assert!(grant_at < write_deny_at);
-        assert!(profile[write_deny_at..].contains("(subpath \"/Users/test/.ssh\")"));
-
-        // Without a working dir, no user folder appears anywhere.
-        let bare = build_sandbox_profile(
-            &home,
-            std::slice::from_ref(&workspace),
-            &config_path,
-            &config_temp_prefix,
-            false,
-            None,
-        );
-        assert!(!bare.contains("Projects"));
-        assert!(!bare.contains(";; Working folder"));
-    }
-
-    /// Kernel-level proof of the working-folder story: the granted folder is
-    /// writable, and — layering test — a credential store stays unwritable
-    /// even when the grant spans it (validation refuses such folders, but
-    /// the profile must hold on its own).
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn working_dir_profile_is_enforced_by_the_kernel() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let home = std::fs::canonicalize(dir.path()).expect("canonicalize home");
-        let workspace = home.join("workspace");
-        std::fs::create_dir_all(&workspace).expect("create workspace");
-        let project = home.join("Projects").join("demo app");
-        std::fs::create_dir_all(&project).expect("create project");
-        std::fs::create_dir_all(home.join(".ssh")).expect("create .ssh");
-
-        let config_path = sandbox_config_write_path(&workspace);
-        let config_temp_prefix = sandbox_config_temp_prefix(&workspace);
-        // Deliberately grant HOME itself as the working dir for the layering
-        // assertion — the strongest case the write-deny must survive.
-        let profile_text = build_sandbox_profile(
-            &home,
-            std::slice::from_ref(&workspace),
-            &config_path,
-            &config_temp_prefix,
-            false,
-            Some(&home),
-        );
-        let profile_path = workspace.join("test.sb");
-        std::fs::write(&profile_path, &profile_text).expect("write profile");
-
-        let run = |script: &str| {
-            std::process::Command::new(SANDBOX_EXEC_PATH)
-                .arg("-f")
-                .arg(&profile_path)
-                .arg("/bin/bash")
-                .arg("-c")
-                .arg(script)
-                .output()
-                .expect("run sandbox-exec")
-        };
-
-        // Allowed: a write inside the granted folder (path with spaces).
-        let inside = project.join("notes.md");
-        let out = run(&format!("echo ok > {}", sbpl_shell_quote(&inside)));
-        assert!(
-            out.status.success() && inside.exists(),
-            "working folder write should be allowed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        // Denied: the credential store, even though the grant spans it.
-        let secret = home.join(".ssh").join("id_new");
-        run(&format!("echo bad > {}", sbpl_shell_quote(&secret)));
-        assert!(
-            !secret.exists(),
-            "secret store write must stay denied inside a granted folder"
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    fn sbpl_shell_quote(path: &Path) -> String {
-        format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
     }
 
     #[test]

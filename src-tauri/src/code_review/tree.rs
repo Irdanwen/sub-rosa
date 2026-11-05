@@ -4,7 +4,6 @@
 
 use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 
 use sha2::Digest as _;
 
@@ -54,14 +53,11 @@ pub(super) fn relative_name(path: &Path) -> Option<String> {
 }
 
 /// What a regular file holds now, or `None` when there is no regular file
-/// there (missing, a folder, a link, or too large to read).
+/// there (missing, a folder, a link, or too large to read). Read without
+/// following a link on any part of the path (ADR-0140): a folder on the way
+/// the jail replaced by a link is refused, not followed.
 pub(super) fn read_current(folder: &Path, name: &str) -> Option<Vec<u8>> {
-    let path = folder.join(name);
-    let metadata = std::fs::symlink_metadata(&path).ok()?;
-    if !metadata.is_file() || metadata.len() > MAX_FILE_BYTES {
-        return None;
-    }
-    std::fs::read(path).ok()
+    crate::confined_read::read_beneath(folder, Path::new(name), MAX_FILE_BYTES).ok()
 }
 
 /// Every regular file under `folder`, skipping links and rebuilt folders.
@@ -109,12 +105,9 @@ pub(super) struct Git<'a> {
 
 impl Git<'_> {
     fn run(&self, args: &[&str]) -> Result<Vec<u8>, AppError> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(self.folder)
-            .args(args)
-            .output()
-            .map_err(|error| AppError::new("code_review_git_failed", error.to_string()))?;
+        // Neutralized, checked, jailed and bounded in time (ADR-0140): the
+        // session writes this folder.
+        let output = crate::hermes_bridge::jailed_git::run(self.folder, args)?;
         if !output.status.success() {
             return Err(AppError::new(
                 "code_review_git_failed",
@@ -125,14 +118,26 @@ impl Git<'_> {
     }
 
     /// The commit the folder is on, when it is in a repository that has one.
-    pub fn head(&self) -> Option<String> {
-        let inside = self.run(&["rev-parse", "--is-inside-work-tree"]).ok()?;
+    /// A folder whose git the app refuses (ADR-0140) is an error the person
+    /// reads, never a silent fall back to a copy of the folder.
+    pub fn head(&self) -> Result<Option<String>, AppError> {
+        let refused =
+            |error: &AppError| error.code == "git_unsafe_folder" || error.code == "git_timed_out";
+        let inside = match self.run(&["rev-parse", "--is-inside-work-tree"]) {
+            Ok(inside) => inside,
+            Err(error) if refused(&error) => return Err(error),
+            Err(_) => return Ok(None),
+        };
         if String::from_utf8_lossy(&inside).trim() != "true" {
-            return None;
+            return Ok(None);
         }
-        let head = self.run(&["rev-parse", "--verify", "HEAD^{commit}"]).ok()?;
+        let head = match self.run(&["rev-parse", "--verify", "HEAD^{commit}"]) {
+            Ok(head) => head,
+            Err(error) if refused(&error) => return Err(error),
+            Err(_) => return Ok(None),
+        };
         let head = String::from_utf8_lossy(&head).trim().to_string();
-        (head.len() >= 40 && head.chars().all(|c| c.is_ascii_hexdigit())).then_some(head)
+        Ok((head.len() >= 40 && head.chars().all(|c| c.is_ascii_hexdigit())).then_some(head))
     }
 
     fn names(&self, args: &[&str]) -> Result<BTreeSet<String>, AppError> {
@@ -148,7 +153,16 @@ impl Git<'_> {
     /// Files that differ from `head` in the working tree (tracked ones), and
     /// files git has never heard of that are not ignored.
     pub fn changed_since(&self, head: &str) -> Result<BTreeSet<String>, AppError> {
-        let mut names = self.names(&["diff", "--name-only", "-z", "--relative", head, "--"])?;
+        let mut names = self.names(&[
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--name-only",
+            "-z",
+            "--relative",
+            head,
+            "--",
+        ])?;
         names.extend(self.names(&["ls-files", "-z", "--others", "--exclude-standard"])?);
         Ok(names)
     }
@@ -167,8 +181,9 @@ impl Git<'_> {
         {
             return Ok(None);
         }
+        // The bytes as committed: never through a filter the folder names.
         let spec = format!("{head}:./{name}");
-        self.run(&["cat-file", "--filters", &spec]).map(Some)
+        self.run(&["cat-file", "blob", &spec]).map(Some)
     }
 }
 
@@ -204,6 +219,64 @@ mod tests {
         assert_eq!(
             walk(dir.path(), 1).unwrap_err().code,
             "code_review_too_large"
+        );
+    }
+}
+
+/// ADR-0140 (final pass): the code review reads a folder the jail wrote
+/// without running what it planted, and reads a past file as committed.
+#[cfg(test)]
+#[cfg(target_os = "macos")]
+mod planted_tests {
+    use super::Git;
+    use crate::hermes_bridge::jailed_git::planted::{planted_repository, Plant};
+
+    #[test]
+    fn the_review_runs_nothing_the_jail_planted() {
+        // What the command's own configuration outranks: read, never run.
+        let planted = planted_repository(Plant::Neutralized);
+        let git = Git {
+            folder: &planted.repo,
+        };
+        let head = git.head().unwrap().expect("a head");
+        let changed = git.changed_since(&head).unwrap();
+        let before = git.file_at(&head, "a.txt").unwrap();
+        planted.assert_untouched(&[before.clone().unwrap_or_default()]);
+        assert!(
+            changed.contains("a.txt") && changed.contains("new.txt"),
+            "{changed:?}"
+        );
+        assert_eq!(before.as_deref(), Some(&b"one\n"[..]));
+        // A defined program: the folder is refused.
+        let planted = planted_repository(Plant::Programs);
+        let git = Git {
+            folder: &planted.repo,
+        };
+        let refused = git
+            .head()
+            .expect_err("a folder defining a program was read");
+        assert_eq!(refused.code, "git_unsafe_folder");
+        assert!(git.file_at("HEAD", "a.txt").is_err());
+        planted.assert_untouched(&[]);
+    }
+
+    /// ADR-0140 (audit D5): a folder on the way replaced by a link to a
+    /// folder outside is not read through.
+    #[test]
+    fn a_folder_replaced_by_a_link_is_not_read_through() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("work");
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("id_ed25519"), "AUDIT-KEY-CONTENT").unwrap();
+        std::os::unix::fs::symlink(&outside, folder.join("d")).unwrap();
+        assert_eq!(super::read_current(&folder, "d/id_ed25519"), None);
+        std::fs::create_dir_all(folder.join("e")).unwrap();
+        std::fs::write(folder.join("e/f.txt"), "inside").unwrap();
+        assert_eq!(
+            super::read_current(&folder, "e/f.txt").as_deref(),
+            Some(&b"inside"[..])
         );
     }
 }

@@ -156,7 +156,6 @@ export function createAdminTransport(
         kind: "parse",
         status,
         rawBody: text,
-        safeMessage: "Hermes returned an unexpected response.",
       });
       void error;
       emit(sink, "error", endpoint, url, adminError, request.body);

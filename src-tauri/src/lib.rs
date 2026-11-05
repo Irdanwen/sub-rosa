@@ -34,6 +34,7 @@ pub mod child_env;
 #[cfg(desktop)]
 pub mod code_review;
 pub mod commands;
+pub mod confined_read;
 pub mod connectors;
 pub mod conversation_export;
 #[cfg(desktop)]
@@ -428,6 +429,10 @@ pub fn run() {
             hermes_bridge::update_hermes_bridge_messaging_platform,
             hermes_bridge::hermes_agent_cli_access,
             hermes_bridge::set_hermes_agent_cli_access,
+            hermes_bridge::quarantine::hermes_quarantine_notice,
+            hermes_bridge::quarantine::dismiss_hermes_quarantine_notice,
+            hermes_bridge::quarantine::restore_hermes_quarantine,
+            hermes_bridge::session_owner::hermes_record_session_home,
             hermes_bridge::open_hermes_tui_debug,
             commands::get_microphone_permission_state,
             commands::check_recording_source_readiness,

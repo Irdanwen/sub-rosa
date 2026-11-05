@@ -528,6 +528,7 @@ mod tests {
                 .collect(),
             findings: vec![],
             summary: None,
+            notice: None,
             prompt_version: "council-v1".to_string(),
             last_error: None,
             created_at: String::new(),

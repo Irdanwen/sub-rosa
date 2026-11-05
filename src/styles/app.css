@@ -25199,3 +25199,62 @@ input:focus-visible,
 .sidebar-settings-fold[aria-expanded="false"] > svg {
   transform: rotate(-90deg);
 }
+
+/* ADR-0140: the notice said once after the assistant's home was split. */
+.home-split-notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--foreground);
+}
+
+.home-split-notice-banner {
+  padding: var(--sp-3) var(--sp-4);
+  margin: var(--sp-2) var(--sp-3) 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--card);
+}
+
+.home-split-notice-settings {
+  padding: var(--sp-3) 0;
+}
+
+.home-split-notice-title {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.home-split-notice-text {
+  margin: 0;
+}
+
+.home-split-notice-list ul,
+.home-split-notice-redo {
+  margin: var(--sp-1) 0 0;
+  padding-left: var(--sp-4);
+}
+
+.home-split-notice-list li {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.home-split-notice-error {
+  margin: 0;
+  color: var(--destructive);
+}
+
+.home-split-notice-actions {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}
+
+.home-split-notice-choice {
+  display: inline-flex;
+  gap: var(--sp-2);
+  align-items: center;
+}

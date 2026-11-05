@@ -2928,3 +2928,92 @@ restait collé dans son coin. Quatre causes, aucune propre à une session :
   on le gare sur un côté (`meeting-hud-zone`), alors que la rotation native qui
   devait les accompagner n'existe que sur macOS. Ses libellés d'accessibilité
   sont aussi hors de `t()`.
+
+## Le jail n'écrit plus ce qui est relu hors de lui (2026-10-25, ADR-0140)
+
+Correctif de sécurité de 1.97.0, sorti seul. Le profil Seatbelt ferme le home
+du runtime et son installation en entier, puis ne rouvre que l'état de travail
+mesuré (`workspace/`, `sessions/`, `logs/`, `cache/`, `images/`,
+`image_cache/`, `audio_cache/`, `state.db*`, `verification_evidence.db*`,
+`auth.lock`) ; `--profile default` sur chaque commande Hermes et
+`active_profile` supprimé à chaque démarrage ; `.env` réécrit par l'app depuis
+son registre filtré (`hermes-settings.json`) ; les changements de Réglages
+passent par un processus ponctuel de l'app hors du jail (`admin_once`) et
+survivent au démarrage suivant. Un home par mode (`hermes-sandboxed/` pour le
+runtime sandboxé, `hermes/` partagé et fermé au jail) ; chaque conversation a
+un home propriétaire ; aucun service système ne lance un programme hors du
+jail pour lui ; le runtime démarre dans sa propre session.
+
+### Fichiers ajoutés
+
+- `src-tauri/src/hermes_bridge/sandbox_profile.rs` (+ `sandbox_profile_tests.rs`) : le profil, sorti de `hermes_bridge.rs` (cliquet −597 lignes), la liste d'autorisation, essais noyau
+- `src-tauri/src/hermes_bridge/home_split.rs` : un home par mode (`hermes-sandboxed/` pour le runtime sandboxé), routage des requêtes de tableau de bord par home (sessions fusionnées, routines et messageries sur le home partagé), lecteur ponctuel sous le jail, copie unique des conversations
+- `src-tauri/src/hermes_bridge/session_owner.rs` : le home propriétaire de chaque conversation (`hermes-session-homes.json`, écrit par l'app seule), commande `hermes_record_session_home`, options de lecture durcies d'un `state.db`
+- `src-tauri/src/hermes_bridge/quarantine.rs` : mise de côté unique de ce qui n'est pas à l'app, avis (ce qu'il faut refaire, éléments signalés) et « Put them back »
+- `src/components/agent/HomeSplitNotice.tsx` : l'avis unique, en bandeau à l'ouverture et dans Réglages › Agent
+- `src/components/agent/filesystem-root-words.ts` : libellés et descriptions du panneau Fichiers par `t()`, selon l'id du dossier
+- `src-tauri/src/hermes_bridge/jail_reaper.rs` : à l'arrêt d'un runtime jailé, tue aussi ses descendants, sa session et tout processus portant sa marque `SUBROSA_JAIL_MARK`
+- `src-tauri/src/confined_read.rs` (nouveau, fork) : la seule lecture, hors prison, d'un fichier que la prison peut écrire (conseil, revue de code, aperçus et téléchargements du panneau Fichiers) : `openat` composant par composant avec `O_NOFOLLOW`, fichier ordinaire seulement, taille bornée (ADR-0140, second addendum du 2026-11-03). **À unifier à la fusion** avec `src-tauri/src/code/confined.rs` de la branche `feat/code-p1-timeline`, qui fait la même chose pour ses lectures : garder une seule fonction. Écrit aussi (`write_beneath`, `remove_beneath`) pour l'annulation de la revue : même chemin sans lien, temporaire renommé dans le dossier.
+- `src-tauri/src/path_confinement.rs` : `SECRET_FILE_PATTERNS`, seule liste des fichiers secrets (les anciens `SENSITIVE_FILES` et `SENSITIVE_SUFFIXES` y sont fondus ; `*.lock` reste un verrou du panneau Fichiers, pas un secret), comparée sans casse, et `secret_pathspecs()` : le conseil et la revue n'envoient jamais leur contenu ; liste unique, à réutiliser pour C3.5. Le git de l'app relit le fichier d'exclusions global de la personne (`jailed_git::person_excludes_file`, lecture texte de la config, rien d'exécuté).
+- `src-tauri/src/hermes_bridge/jail_reaper_gate.rs` (nouveau, fork) : seule porte des signaux du reaper ; en test, barrière qui refuse et nomme toute cible que le test n'a pas créée (ADR-0140, addendum 2026-11-03). Entrée séparée `killpg_child` : le groupe du `Child` que l'appelant tient, rien d'autre (délai de `jailed_git`). Jamais muté (`cmp` avant et après chaque mutant).
+- `src-tauri/src/hermes_bridge/jailed_git.rs` : tout `git` que l'app lance sur un dossier que le jail écrit (revue de code, conseil) : configuration neutralisée dans la portée de la commande, vérification de la configuration avant chaque commande (un `filter.*`, `diff.*.command`, `diff.*.textconv` ou `merge.*.driver` refuse le dossier), profil Seatbelt qui refuse par défaut (sur `system.sb` : git et ses aides seulement, lecture de l'installation de git, du dépôt et d'un dossier temporaire, aucun réseau), passé par `sandbox-exec -p`. Non « disclaimed » : mesuré, un git disclaimed ne lit plus un dossier sous `~/Documents`. Seconde passe (audit) : délai de 30 s par git (groupe tué), sonde et git hors du thread async (`run_async`), `--ignore-submodules=all` en ligne de commande pour `status` et `diff`, `GIT_WORK_TREE` forcé (un `core.worktree` étranger est refusé par la sonde), magasins de secrets refusés même en métadonnées. API : `run`/`run_async` remplacent `command`/`tokio_command`.
+- `docs/release-notes/0140-jail.md` : notes de version proposées, français et anglais
+- `src-tauri/src/hermes_bridge/mcp_oauth_origin.rs` : l'adresse de connexion OAuth MCP ne s'ouvre seule que sur une origine déclarée par le serveur (RFC 9728) Revue de sécurité : pour une connexion lancée depuis la prison, un serveur loopback ou privé ne se porte jamais garant (ni de lui-même, ni de ce que ses métadonnées déclarent) ; et le profil de la prison n'autorise `network-bind` que sur ses sockets unix et le port de son tableau de bord.
+- `src-tauri/src/hermes_bridge/home_prep.rs` : squelette du home, `.env` depuis le registre, `active_profile`, fichiers possédés remplacés et non suivis
+- `src-tauri/src/hermes_bridge/admin_settings.rs` : le registre, extraction par clés nommées, réinsertion dans `config.yaml`, filtre et lecteur `.env`
+- `src-tauri/src/hermes_bridge/admin_once.rs` + `src-tauri/src/hermes/subrosa_admin.py` : routes de réglage exécutées hors jail, copie des skills livrées
+- `src-tauri/src/hermes_bridge/jail_runtime_tests.rs` + `scripts/jail-eval/runtime_lives.py` : essais réels ignorés (runtime installé, modèle factice local, gratuits)
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/hermes_bridge.rs` | Profil et `prepare_sandbox` déplacés (`sandbox_profile::prepare`, `prepare_reader`) ; runtime lancé par `own_session` (`setsid`) au lieu de `process_group(0)` ; `hermes_bridge_cron_jobs` passe par `home_split::api_json` (home partagé) ; `mcp login` sur le home de la session, sous le jail du lecteur côté sandboxé, sans copie de jetons ; libellés du panneau Fichiers sans « Hermes » ; `dashboard_args` avec `--profile default` ; `--profile default` forcé dans `mcp login`, `skills reset`, `skills tap` et le TUI ; `sync_hermes_config` applique le registre puis `home_prep::prepare` ; `config.yaml`/`SOUL.md` via `write_owned` ; `hermes_connection_json` délègue les routes de réglage à `admin_once` ; copie des skills livrées avant un démarrage sandboxé ; `active_profile` retiré avant `gateway start` ; texte sandbox du SOUL ; anciennes constantes `HERMES_CONFIG_*` et tests du profil retirés | Réappliquer ; ne jamais rouvrir le home en racine d'écriture |
+| `src-tauri/src/hermes_bridge/gateway_start.rs` | `--profile default` avant `gateway start`/`install` | Réappliquer |
+| `src-tauri/src/hermes_bridge/builtin_mcp.rs` | `is_builtin_server` | Réappliquer |
+| `src/lib/hermes-admin/errors.ts`, `transport.ts` | Messages sûrs par `t()`, sans nommer le runtime ; un 5xx dit « This change was not made » ; le code `setting_key_not_declared` a sa phrase | Réappliquer, garder les phrases du catalogue |
+| `src-tauri/src/commands.rs`, `src-tauri/src/account/conversations.rs` | Lisent une conversation dans son home propriétaire seulement (`session_owner`), jamais « sandboxé puis partagé sur 404 » ; `state.db` ouvert en lecture seule durcie (`trusted_schema=OFF`, `cell_size_check=ON`, `query_only`) ; le backfill du compte n'attache plus la base de l'app et clé sa progression par home (`default` partagé, `sandboxed`) | Réappliquer Une tâche sans session liée n'est rapprochée par titre que dans le home de son mode (`session_owner::homes_for_unbound_task`, `hermes-task-homes.json`, champ `unrestricted` de `CreateAgentTaskRequest`), et dans le home partagé seul quand ce mode est inconnu ; tests dans `commands_hermes_tests.rs`. |
+| `src-tauri/src/temporary_chat/mod.rs`, `src-tauri/src/personalization/mod.rs`, `src-tauri/src/hermes_working_dir.rs` | Nettoient ou écrivent les deux homes ; le workspace par défaut d'une session sandboxée est celui du home sandboxé | Réappliquer |
+| `src-tauri/src/lib.rs` | `hermes_bridge::quarantine::{hermes_quarantine_notice, dismiss_hermes_quarantine_notice, restore_hermes_quarantine}` et `hermes_bridge::session_owner::hermes_record_session_home` dans la liste desktop (préfixe `hermes`, propre au bureau) | Réappliquer |
+| `src/components/settings/AgentSettingsSection.tsx`, `src/lib/tauri.ts`, `src/app/App.tsx`, `src/styles/app.css` | Ligne « In a sandboxed session » ; l'avis unique `HomeSplitNotice` (bandeau dans `main-panel`, et Réglages › Agent) | Réappliquer |
+| `src/lib/agent-session-modes.ts`, `src/components/agent/AgentWorkspace.tsx`, `src/components/chat-bar/ChatBar.tsx` | Le home d'une session est enregistré côté natif à la création et à la reprise (`recordSessionHome`, erreurs journalisées) ; libellés du panneau Fichiers par `t()` selon l'id | Réappliquer |
+| `src/lib/hermes-admin/use-mcp-oauth.ts`, `src/components/settings/McpServersSection.tsx` | `authUrlUnverified` : une adresse de connexion non déclarée n'est pas ouverte, la ligne le dit avec l'hôte | Réappliquer |
+| `src-tauri/Cargo.toml` | `libsqlite3-sys` direct (mode défensif) | Garder la version alignée sur sqlx-sqlite |
+| `src-tauri/src/documents.rs` | `extract_beside` écrit en fichier neuf (remplace ce qui est au nom, ne le suit pas) | Réappliquer |
+| `src-tauri/src/hermes_bridge/guard.rs` | Le plugin est écrit par `write_owned`, un lien à la place du dossier est retiré | Réappliquer |
+| `src/lib/hermes-admin/use-skill-setup.ts`, `use-skill-detail.ts`, `use-skill-bundles.ts` | « Hermes is not running. » remplacé par une phrase traduite | Réappliquer |
+| `src/test/hermes-admin-client.test.ts` | Nouvelles phrases attendues | Réappliquer |
+| `src/components/settings/ConnectorsSection.tsx` (fork) | Nettoyage hérité retiré (mode figé `sandboxed`, suppression passée par le runtime jailé) : aucune copie ne survit à un démarrage | Garder la version fork |
+
+### Pièges
+
+- Le runtime crée `cron/`, `memories/`, `skills/`… et un `SOUL.md` par défaut au chargement de sa config : sous le jail, c'est l'app qui doit les créer avant (sans `cron/`, l'agent d'une session ne démarre pas).
+- Les outils fichiers de Hermes refusent les chemins sous `/private/var` (« sensitive system path ») : un essai réel doit placer son home hors de `$TMPDIR`.
+- Le home d'un essai est souvent sous `$TMPDIR`, qui est une racine d'écriture : c'est pourquoi le profil ferme le home APRÈS toutes les autorisations.
+- Un basculement d'outil écrit `platform_toolsets.cli` en entier (kanban compris) : `agent.disabled_toolsets` reste le dernier mot de l'app, et `platform_toolsets.cron` n'est jamais repris du registre.
+- Les journaux de l'app (`dashboard.log`, `gateway-start.log`, `settings-changes.log`, le lanceur `tui-debug-*.command`) sont dans `<données de l'app>/logs/`, plus dans `hermes/logs/` que le jail écrit ; le profil refuse les liens (symboliques et physiques) dans l'état du runtime sauf le workspace (mais pas `workspace/uploads`), et l'app n'écrit un téléversement qu'en fichier neuf.
+- `.env` : liste d'autorisation tirée du schéma du runtime épinglé (`_env_schema`), pas une liste de refus ; une clé inconnue est refusée en 422 avec le code `setting_key_not_declared`.
+- Un essai réel qui « plante » dans le runtime emprunté ne doit créer que des fichiers neufs : une mutation a un jour ajouté un octet à `run_agent.py` du runtime de dev (réparé, identique au bundle).
+- Premier démarrage sous ADR-0140 : `quarantine.rs` met de côté (jamais ne supprime) `bin/tirith`, `hooks/`, `scripts/`, `mcp-installs/`, `plugins/` (sauf le garde), `profiles/` et les routines à `script`/`no_agent`, dans `<données de l'app>/quarantine/<date>/`, puis redémarre une fois le gateway (seulement un runtime au service nommé d'après son home).
+- `gateway_auto_continue_freshness: 1`, pas 0 : pour le runtime, 0 veut dire « toujours frais » ; `gateway.delivery_ledger: false`.
+- Le profil ferme par `literal` chaque ancêtre du home et du runtime jusqu'à `/` : écrire dedans reste permis, renommer ou remplacer non.
+- Le gateway est TOUJOURS lancé sur le home partagé (`hermes_gateway_start_command`), même demandé depuis le runtime sandboxé ; son état « running » se lit sur le home partagé (lecteur ponctuel), pas sur le tableau de bord sandboxé qui n'a pas de gateway.
+- Le profil sandboxé ferme le home partagé en entier et refuse les signaux hors du sandbox (`(deny signal (target others))` + `(allow signal (target same-sandbox))`, mesuré : le runtime arrête encore ses enfants en nouvelle session).
+- Services système : LISTE D'AUTORISATION (`ALLOWED_MACH_SERVICES` : libinfo, cfprefsd agent+daemon, FSEvents, trustd.agent), mesurée en retirant chaque nom sous Python/Node/git/curl/Go/`defaults read` puis confirmée par `runtime_lives.py` ; tout le reste est refusé (LaunchServices, AppleEvents, Raccourcis, Dock, Services, window server, tccd, presse-papiers). Ne pas « réparer » un outil en ajoutant un nom sans le mesurer et l'expliquer dans l'ADR. Désavouer la responsabilité TCC (`responsibility_spawnattrs_setdisclaim`) a été mesuré et écarté : il ôte Documents/Bureau/Téléchargements au runtime.
+- `write_owned` écrit un fichier neuf puis le renomme (jamais sur place) ; le premier démarrage met de côté les liens symboliques du home partagé et coupe les liens durs (copie) ; Restaurer est élément par élément et refuse les liens.
+- Sockets unix : le jail ne se connecte qu'à son propre `TMPDIR` (`<temp>/subrosa-jail`), son home, son dossier de travail, `mDNSResponder` (sans lui, plus de résolution de noms) et `syslog` ; jamais aux magasins de secrets, aux écouteurs de launchd (agent ssh), à docker/colima/orbstack. `SSH_AUTH_SOCK`, `GPG_AGENT_INFO`, `DOCKER_HOST`, `TMUX` retirés de son environnement.
+- Le jail n'écrit plus AUCUN temp partagé (`/private/tmp`, `/private/var/tmp`, `$TMPDIR`) : seulement `$TMPDIR/sr-jail` (son `TMPDIR`, nom court pour les sockets ≤ 104 octets). Sinon il renommait le socket d'un autre programme dans son temp et s'y connectait. Ne jamais écrire un `(allow file-write*)` vide : sans filtre, il autorise tout.
+- Boucle locale : seuls les ports nommés par l'app au lancement (proxy, dashboard du runtime, serveurs MCP locaux de la personne) ; IPv6 refusé par `tcp6`/`udp6` (le filtre `ip6` fait sauter la règle localhost, mesuré). Un serveur local lancé par la session elle-même n'est plus joignable.
+- `jail_reaper` reconnaît un processus du jail par le service marqueur `xyz.carpediem.subrosa.jail` AUTORISÉ et le canari `xyz.carpediem.subrosa.jail-canary` REFUSÉ (`sandbox_check`), sans condition de responsabilité (un `posix_spawn` avec désaveu ne l'évite pas) ; une question par chemin posée pour un autre processus répond toujours « refusé ».
+- Le nom de `sr-jail` (et du dossier de réponse du lecteur) est fermé au jail par `(literal …)` ; `create_private_dir` crée sans suivre de lien (`O_NOFOLLOW|O_DIRECTORY`, `fchmod`).
+- Les filtres réseau SBPL n'acceptent que `*` ou `localhost` : impossible de refuser une IP précise (adresse Tailscale/VPN) ; mesuré que `localhost` couvre 127.0.0.1, 0.0.0.0 et l'adresse en0.
+- `src-tauri/src/council/evidence.rs` et `src-tauri/src/code_review/tree.rs` passent par `jailed_git::command` (`--no-ext-diff --no-textconv`, `cat-file blob` au lieu de `cat-file --filters`) : sans cela, un `core.fsmonitor` planté dans `.git/config` s'exécutait hors jail (présent en 1.97.0).
+- Reaper : gel (`SIGSTOP`, groupe entier de tout processus trouvé dans une session autre que celle de l'app ; un processus est connu par son pid et son heure de départ, une réponse sur un processus disparu pendant la question n'est pas gardée ; un orphelin du jail inclut le processus dont le parent du jail en est un) puis `SIGKILL` de tout ce qui est gelé et des groupes gelés (un balayage fini au calme a tout arrêté, et un processus arrêté ne lance rien), borné à 5 s, marqueur propre à l'installation (hachage du chemin de l'exécutable), balayage au premier démarrage et après le lecteur. UDP sortant refusé. Dossiers de travail refusés : `~/Library/LaunchAgents`, `Application Support`, `Preferences`, `Scripts`, `Services`, `Containers`, `Group Containers`.
+- `launchctl kickstart/kill/bootout/disable` passent depuis un sandbox (port d'amorçage, aucune règle SBPL mesurée ne les refuse) : le profil refuse `/bin/launchctl` ; reste documenté dans l'ADR (disponibilité, pas exécution).
+- `jail_reaper` tue aussi les orphelins sous profil dont l'app est responsable (`responsibility_get_pid_responsible_for_pid` + `sandbox_check`), sauf les services XPC du système (WebKit) ; en développement lancé depuis un terminal, le responsable est le terminal.
+- Le résultat du lecteur ponctuel va dans `<données de l'app>/hermes-reader-results/` (seul le profil du lecteur peut y écrire), plus dans `$TMPDIR`. `state.db` lu en mode défensif SQLite (`libsqlite3-sys` direct, même version que sqlx).
+- « others » pour `signal` = un autre groupe de processus : d'où `setsid` (une session ne se rejoint pas), pas seulement `process_group(0)`.
+- Le lecteur ponctuel du home sandboxé tourne sous `hermes-sandbox-reader.sb` (réécrit à chaque démarrage, sans dossier de travail ni accès CLI) et échoue fermé sans lui là où le jail s'applique.
+- Jetons OAuth MCP : chaque côté se connecte dans son propre home ; aucune copie du home partagé vers celui du jail.
+- La copie des conversations au partage ne bloque jamais un démarrage : un échec est journalisé, dit dans l'avis, et réessayé tant que le home sandboxé n'a pas de base à lui.
+- Conflit attendu à la fusion de `feat/code-p1-checks`, qui crée aussi `sandbox_profile.rs` (refus nommés) : garder l'inversion de ce lot et y reporter la section des toolchains.

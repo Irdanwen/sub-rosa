@@ -18,7 +18,10 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use super::{apply_isolated_hermes_env, gateway_label, HermesBridgeConnection};
+use super::{
+    apply_isolated_hermes_env, gateway_label, HermesBridgeConnection, HERMES_DEFAULT_PROFILE,
+    HERMES_PROFILE_FLAG,
+};
 
 /// Set to take the shared gateway over from a debug build anyway.
 pub(super) const TAKEOVER_ENV: &str = "SUBROSA_DEV_GATEWAY";
@@ -61,6 +64,10 @@ pub(super) fn build_hermes_gateway_start_command(
     hermes_home: &Path,
 ) -> Command {
     let mut cmd = Command::new(&connection.command);
+    // ADR-0140: the default profile, never a sticky `active_profile`. The
+    // service definition the runtime writes carries no profile of its own,
+    // which is why the app also removes that file before each start.
+    cmd.args([HERMES_PROFILE_FLAG, HERMES_DEFAULT_PROFILE]);
     if cfg!(windows) {
         // `gateway start` is a dead end on a fresh Windows install: with no
         // service registered it asks "Install it now? [Y/n]", and Hermes'
@@ -87,6 +94,27 @@ pub(super) fn build_hermes_gateway_start_command(
     } else {
         cmd.stdin(Stdio::null());
     }
+    cmd
+}
+
+/// Restarts the gateway's service once after the first start under ADR-0140
+/// set something aside: a gateway running since before may hold a hook or
+/// a plugin it loaded from the home. Best effort: a gateway that is not
+/// installed has nothing to restart.
+pub(super) fn restart_command(hermes_command: &str, hermes_home: &Path) -> Command {
+    let mut cmd = Command::new(hermes_command);
+    cmd.args([
+        HERMES_PROFILE_FLAG,
+        HERMES_DEFAULT_PROFILE,
+        "gateway",
+        "restart",
+    ]);
+    apply_isolated_hermes_env(&mut cmd, hermes_home, &super::random_token(), None);
+    cmd.env("HERMES_NONINTERACTIVE", "1");
+    cmd.current_dir(hermes_home);
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     cmd
 }
 

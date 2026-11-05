@@ -58,6 +58,9 @@ export type McpOauthLoginState = {
   /** The token-free authorization URL, when the bridge surfaced one, so the UI
    * can offer a manual "open in browser" fallback. */
   authUrl?: string;
+  /** The address is not on an origin the server declares: it was not
+   * opened, and the row says so before offering it (ADR-0140). */
+  authUrlUnverified?: boolean;
   /** A safe error message when `phase === "failed"`. */
   error?: string;
 };
@@ -151,18 +154,20 @@ export class McpOauthController {
     // redactors as defense in depth before anything reaches the screen.
     const message = safeOauthMessage(result.message ?? undefined);
     const authUrl = safeAuthorizationUrl(result.authUrl ?? undefined);
+    const authUrlUnverified = result.authUrlUnverified === true;
 
     if (!result.ok) {
       // A timeout is NOT a failure: the user may still be completing the browser
       // step. Leave the row waiting with the URL so they can re-open / re-check.
       if (result.timedOut) {
-        this.setLogin(server, { phase: "waiting", message, authUrl });
+        this.setLogin(server, { phase: "waiting", message, authUrl, authUrlUnverified });
         return;
       }
       this.setLogin(server, {
         phase: "failed",
         error: message ?? `Could not sign in to ${server}.`,
         authUrl,
+        authUrlUnverified,
       });
       return;
     }
@@ -174,6 +179,7 @@ export class McpOauthController {
       phase: "done",
       message: message ?? OAUTH_GENERIC_MESSAGE,
       authUrl,
+      authUrlUnverified,
     });
   }
 

@@ -689,6 +689,16 @@ function OauthStatus({
         </p>
       ) : null}
 
+      {signInHref && login?.authUrlUnverified ? (
+        <p className="mcp-server-oauth-error" role="alert">
+          <IconExclamationCircle size={13} ariaHidden />
+          {t(
+            "Sub Rosa did not open this sign-in page: it is not on an address this server declares ({host}). Open it only if you recognize it.",
+            { host: hostOf(signInHref) },
+          )}
+        </p>
+      ) : null}
+
       {signInHref ? (
         <a
           className="mcp-server-oauth-link"
@@ -706,6 +716,15 @@ function OauthStatus({
       ) : null}
     </div>
   );
+}
+
+/** The host a sign-in address leads to, for the person to read. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
 }
 
 /** Renders the connection target for a stdio server: command plus its args. */

@@ -48,9 +48,18 @@ fn guarded_system_prefixes() -> Vec<PathBuf> {
             "/sbin",
             "/etc",
             "/private/etc",
+            // ADR-0140 (M1): temp and run folders hold other programs'
+            // sockets (a database's, a terminal multiplexer's, launchd's
+            // agent listeners), which a jail allowed to write there could
+            // carry into reach.
+            "/private/tmp",
+            "/private/var/tmp",
+            "/private/var/folders",
+            "/private/var/run",
         ]
         .iter()
         .map(PathBuf::from)
+        .chain(std::iter::once(std::env::temp_dir()))
         .collect()
     }
     #[cfg(windows)]
@@ -78,6 +87,19 @@ fn guarded_system_prefixes() -> Vec<PathBuf> {
             .collect()
     }
 }
+
+/// Folders of the person's, relative to their home, never a working folder
+/// nor inside one's reach (ADR-0140): programs outside the jail run or read
+/// what is there.
+const GUARDED_HOME_FOLDERS: &[&str] = &[
+    "Library/LaunchAgents",
+    "Library/Application Support",
+    "Library/Preferences",
+    "Library/Scripts",
+    "Library/Services",
+    "Library/Containers",
+    "Library/Group Containers",
+];
 
 /// Locations refused only when picked EXACTLY (their subfolders are fine):
 /// container directories whose children are legitimate projects but whose
@@ -208,6 +230,16 @@ fn validate_working_dir_with(
             return Err(invalid("System folders can't be a working folder."));
         }
     }
+    // ADR-0140: what programs outside the jail run or read at login (agents
+    // launchd starts, every app's data and scripts, preferences, scripts and
+    // services, app containers) is never a folder the jail may write.
+    if let Some(home) = home.as_deref() {
+        for relative in GUARDED_HOME_FOLDERS {
+            if canonical.starts_with(canon(&home.join(relative))) {
+                return Err(invalid("System folders can't be a working folder."));
+            }
+        }
+    }
     if let Some(app_data_dir) = app_data_dir.as_deref() {
         // Both directions: the app's data dir contains the sandbox profile,
         // the settings, and the agent's own home — a working folder that is
@@ -290,9 +322,15 @@ pub async fn reveal_agent_working_dir(
     app: AppHandle,
     request: WorkingDirPathRequest,
 ) -> Result<(), AppError> {
-    let default_workspace = crate::app_paths::app_data_dir(&app)
-        .ok()
-        .map(|dir| dir.join("hermes").join("workspace"));
+    // Either mode's default workspace (ADR-0140: one home per mode).
+    let default_workspaces: Vec<PathBuf> = crate::app_paths::app_data_dir(&app)
+        .map(|dir| {
+            ["hermes-sandboxed", "hermes"]
+                .iter()
+                .map(|home| dir.join(home).join("workspace"))
+                .collect()
+        })
+        .unwrap_or_default();
     let requested = PathBuf::from(request.path.trim());
     let canonical = requested.canonicalize().map_err(|error| {
         AppError::new(
@@ -300,9 +338,10 @@ pub async fn reveal_agent_working_dir(
             format!("The folder can't be opened right now. {error}"),
         )
     })?;
-    let is_default_workspace = default_workspace
-        .and_then(|dir| dir.canonicalize().ok())
-        .is_some_and(|dir| dir == canonical);
+    let is_default_workspace = default_workspaces
+        .iter()
+        .filter_map(|dir| dir.canonicalize().ok())
+        .any(|dir| dir == canonical);
     if !is_default_workspace {
         validate_working_dir(&app, &request.path)?;
     }
@@ -396,9 +435,10 @@ pub async fn list_agent_folder_entries(
     app: AppHandle,
     request: FolderEntriesRequest,
 ) -> Result<FolderEntriesResponse, AppError> {
+    // A sandboxed session's default workspace, in its own home (ADR-0140).
     let default_workspace = crate::app_paths::app_data_dir(&app)
         .ok()
-        .map(|dir| dir.join("hermes").join("workspace"));
+        .map(|dir| dir.join("hermes-sandboxed").join("workspace"));
     let requested = request.path.as_deref().map(str::trim).unwrap_or("");
     let root = if requested.is_empty() {
         default_workspace.ok_or_else(|| {
@@ -741,6 +781,47 @@ mod tests {
             ok(file.to_str().unwrap(), None, None).unwrap_err().code,
             "working_dir_invalid"
         );
+    }
+
+    /// ADR-0140 (M1): no temp or run folder, nor anything under one, is a
+    /// working folder.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn refuses_temp_and_run_folders() {
+        let inside_temp = tempfile::tempdir().expect("tempdir");
+        for raw in [
+            "/private/tmp".to_string(),
+            "/tmp".to_string(),
+            "/private/var/tmp".to_string(),
+            "/private/var/run".to_string(),
+            std::env::temp_dir().to_string_lossy().into_owned(),
+            inside_temp.path().to_string_lossy().into_owned(),
+        ] {
+            let refused =
+                validate_working_dir_with(&raw, None, None, &guarded_system_prefixes(), &[])
+                    .unwrap_err();
+            assert_eq!(refused.code, "working_dir_invalid", "{raw}");
+        }
+    }
+
+    /// ADR-0140 (final pass): what runs or is read at login is no working
+    /// folder.
+    #[test]
+    fn refuses_the_folders_programs_run_at_login() {
+        let home = tempfile::tempdir().expect("tempdir");
+        for relative in [
+            "Library/LaunchAgents",
+            "Library/Application Support/Some App",
+            "Library/Preferences",
+        ] {
+            let folder = home.path().join(relative);
+            std::fs::create_dir_all(&folder).unwrap();
+            let refused = ok(folder.to_str().unwrap(), Some(home.path()), None).unwrap_err();
+            assert_eq!(refused.code, "working_dir_invalid", "{relative}");
+        }
+        let project = home.path().join("Projects/demo");
+        std::fs::create_dir_all(&project).unwrap();
+        assert!(ok(project.to_str().unwrap(), Some(home.path()), None).is_ok());
     }
 
     #[test]
