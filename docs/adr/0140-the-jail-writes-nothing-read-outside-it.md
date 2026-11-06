@@ -905,3 +905,16 @@ is now checked after the pass's finds are frozen: it makes a sweep
 shorter, never more permissive. Both have a deterministic test, proved by
 mutation.
 
+
+## Addendum 2026-11-06: the shared home's plugin, rewritten whichever home starts
+
+The first start under this ADR sets aside what a jailed process could have
+planted in the shared home, but spares the app's own plugin folder
+(`plugins/subrosa_guard`), which only the starting home's runtime rewrote.
+When the sandboxed home starts first, a file planted there before this ADR
+(a module beside the plugin, a `__pycache__` whose bytecode compiled
+unchecked is loaded without its source) stayed for the gateway to load
+outside the jail. `home_prep::prepare` now makes the shared home's plugin
+folder exactly the app's two files right after the set-aside, whichever
+home starts, and so does every gateway start (`before_the_gateway`).
+Found by the security audit of the merge with the code plan.

@@ -70,6 +70,11 @@ pub(super) fn prepare(hermes_home: &Path) -> Result<(), AppError> {
     let shared = super::home_split::shared_home(hermes_home);
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
     super::quarantine::run_once(&shared, &date).map_err(failed)?;
+    // The set-aside spares the app's plugin folder of the shared home, and
+    // the gateway loads it outside the jail: it is made exactly the app's
+    // files now, whichever home starts, not only when the shared home's
+    // runtime does.
+    super::guard::install_plugin(&shared).map_err(failed)?;
     create_skeleton(hermes_home).map_err(failed)?;
     sweep_links(hermes_home);
     let mut settings = admin_settings::load(hermes_home);
@@ -198,6 +203,16 @@ fn folders_from_home(dir: &Path) -> Vec<&Path> {
         }
     }
     vec![dir]
+}
+
+/// Before the gateway starts on the shared home: no sticky profile, and the
+/// plugin it loads outside the jail made exactly the app's files (a failure
+/// is logged; the next runtime start fails on it).
+pub(super) fn before_the_gateway(shared: &Path) {
+    neutralize_active_profile(shared);
+    if let Err(error) = super::guard::install_plugin(shared) {
+        eprintln!("hermes gateway: its plugin could not be rewritten: {error}");
+    }
 }
 
 /// Removes the sticky profile from the home before the gateway starts; the
@@ -387,6 +402,35 @@ mod tests {
             .map(|entry| entry.file_name())
             .collect();
         assert_eq!(left.len(), 1, "{left:?}");
+    }
+
+    /// What was planted in the shared home's plugin folder (which the
+    /// gateway loads outside the jail) is gone after the first start of the
+    /// SANDBOXED home, the one that runs first.
+    #[test]
+    fn the_shared_homes_plugin_is_the_apps_after_a_sandboxed_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join(super::super::home_split::SHARED_HOME);
+        let sandboxed = dir.path().join(super::super::home_split::SANDBOXED_HOME);
+        std::fs::create_dir_all(&sandboxed).unwrap();
+        let folder = shared.join("plugins/subrosa_guard");
+        std::fs::create_dir_all(folder.join("__pycache__")).unwrap();
+        std::fs::write(folder.join("__init__.py"), "PLANTED = 1\n").unwrap();
+        std::fs::write(folder.join("planted.py"), "PLANTED = 1\n").unwrap();
+        std::fs::write(
+            folder.join("__pycache__/__init__.cpython-311.pyc"),
+            "PLANTED",
+        )
+        .unwrap();
+        prepare(&sandboxed).unwrap();
+        let mut names: Vec<String> = std::fs::read_dir(&folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["__init__.py", "plugin.yaml"]);
+        let source = std::fs::read_to_string(folder.join("__init__.py")).unwrap();
+        assert!(!source.contains("PLANTED"));
     }
 
     #[test]

@@ -5332,8 +5332,9 @@ fn hermes_gateway_start_command(connection: &HermesBridgeConnection) -> Command 
     // ADR-0140: the gateway lives in the shared home, never the jail's,
     // whichever runtime asks for it.
     let hermes_home = home_split::shared_home(Path::new(&connection.hermes_home));
-    // The service the runtime registers restarts without a profile flag.
-    home_prep::neutralize_active_profile(&hermes_home);
+    // The service the runtime registers restarts without a profile flag,
+    // and loads the app's plugin, exactly (`home_prep::before_the_gateway`).
+    home_prep::before_the_gateway(&hermes_home);
     let mut cmd = gateway_start::start_command(connection, &hermes_home);
     match open_gateway_start_log(&hermes_home) {
         Some((log_for_stdout, log_for_stderr)) => {

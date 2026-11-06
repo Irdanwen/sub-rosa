@@ -62,6 +62,27 @@ pub(super) fn install_plugin(hermes_home: &Path) -> std::io::Result<()> {
         std::fs::remove_file(&dir)?;
     }
     std::fs::create_dir_all(&dir)?;
+    // Exactly the app's files: anything else goes first, `__pycache__`
+    // included (a bytecode file compiled unchecked is loaded without its
+    // source). Before ADR-0140 the jail could write here, and the gateway
+    // loads this plugin outside it.
+    const OWN: [&str; 2] = ["plugin.yaml", "__init__.py"];
+    for entry in std::fs::read_dir(&dir)? {
+        let entry = entry?;
+        if OWN
+            .iter()
+            .any(|own| entry.file_name() == std::ffi::OsStr::new(own))
+        {
+            continue;
+        }
+        // `file_type` does not follow a link, and neither does
+        // `remove_dir_all`.
+        if entry.file_type()?.is_dir() {
+            std::fs::remove_dir_all(entry.path())?;
+        } else {
+            std::fs::remove_file(entry.path())?;
+        }
+    }
     super::home_prep::write_owned(&dir.join("plugin.yaml"), PLUGIN_MANIFEST)?;
     super::home_prep::write_owned(&dir.join("__init__.py"), PLUGIN_SOURCE)
 }
