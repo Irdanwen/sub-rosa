@@ -55,6 +55,11 @@ pub(super) struct HermesSettings {
     /// shared home from before the split (`home_split::migrate_once`).
     #[serde(default)]
     pub sandboxed_home_seeded: bool,
+    /// Whether the shared home's gateway must restart once: a start found
+    /// in its plugin folder what was not the app's, which a gateway already
+    /// running may have loaded (`quarantine::ask_gateway_restart`).
+    #[serde(default)]
+    pub gateway_restart: bool,
 }
 
 /// Where a `.env` key comes from, which decides what may pass.

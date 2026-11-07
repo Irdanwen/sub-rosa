@@ -1174,12 +1174,12 @@ async fn start_hermes_bridge_inner(
     )
     .await?;
     guard::install(app, &hermes_home).await?;
-    // Only a runtime that names its service after its home: another one's
-    // gateway is not this app's to restart.
+    // The shared home's gateway, by a runtime naming its service per home.
+    let shared_home = home_split::shared_home(&hermes_home);
     if gateway_label::names_service_per_home(Path::new(&command))
-        && quarantine::take_gateway_restart(&hermes_home)
+        && quarantine::take_gateway_restart(&shared_home)
     {
-        let mut restart = gateway_start::restart_command(&command, &hermes_home);
+        let mut restart = gateway_start::restart_command(&command, &shared_home);
         let _ = tauri::async_runtime::spawn_blocking(move || restart.status()).await;
     }
 
