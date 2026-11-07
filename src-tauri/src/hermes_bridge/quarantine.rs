@@ -271,14 +271,25 @@ pub(super) fn run_once(
 /// `true` once.
 pub(super) fn take_gateway_restart(hermes_home: &Path) -> bool {
     let mut settings = admin_settings::load(hermes_home);
-    let Some(record) = settings.quarantine.as_mut() else {
-        return false;
-    };
-    if !record.restart_gateway {
+    let asked = std::mem::take(&mut settings.gateway_restart);
+    let set_aside = settings
+        .quarantine
+        .as_mut()
+        .is_some_and(|record| std::mem::take(&mut record.restart_gateway));
+    if !asked && !set_aside {
         return false;
     }
-    record.restart_gateway = false;
     admin_settings::save(hermes_home, &settings).is_ok()
+}
+
+/// Asks the shared home's gateway to restart once, at the next runtime
+/// start (`take_gateway_restart`): what it may have loaded was removed.
+pub(super) fn ask_gateway_restart(hermes_home: &Path) {
+    let mut settings = admin_settings::load(hermes_home);
+    settings.gateway_restart = true;
+    if let Err(error) = admin_settings::save(hermes_home, &settings) {
+        eprintln!("hermes home: the gateway's restart could not be recorded: {error}");
+    }
 }
 
 /// What the person has to do again, from what was set aside.

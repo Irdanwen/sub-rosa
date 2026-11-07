@@ -44,15 +44,21 @@ pub(super) fn config_block(memory_off: bool) -> String {
 
 /// Writes the plugin under `$HERMES_HOME/plugins/`. Rewritten at every
 /// runtime start, so an app update carries its guard with it.
-pub(super) fn install_plugin(hermes_home: &Path) -> std::io::Result<()> {
+///
+/// Returns how many entries were not the app's (removed, or one of its files
+/// that held something else): a gateway already running may have loaded
+/// them, and is restarted once.
+pub(super) fn install_plugin(hermes_home: &Path) -> std::io::Result<usize> {
     // A link in place of `plugins` or of the plugin's folder (planted before
     // ADR-0140) goes first: nothing is written through it.
+    let mut foreign = 0;
     let plugins = hermes_home.join("plugins");
     if plugins
         .symlink_metadata()
         .is_ok_and(|meta| meta.file_type().is_symlink() || !meta.is_dir())
     {
         std::fs::remove_file(&plugins)?;
+        foreign += 1;
     }
     let dir = plugins.join(PLUGIN_NAME);
     if dir
@@ -60,10 +66,46 @@ pub(super) fn install_plugin(hermes_home: &Path) -> std::io::Result<()> {
         .is_ok_and(|meta| meta.file_type().is_symlink() || !meta.is_dir())
     {
         std::fs::remove_file(&dir)?;
+        foreign += 1;
     }
     std::fs::create_dir_all(&dir)?;
-    super::home_prep::write_owned(&dir.join("plugin.yaml"), PLUGIN_MANIFEST)?;
-    super::home_prep::write_owned(&dir.join("__init__.py"), PLUGIN_SOURCE)
+    // Exactly the app's files: anything else goes first, `__pycache__`
+    // included (a bytecode file compiled unchecked is loaded without its
+    // source, even beside a source rewritten since). Before ADR-0140 the
+    // jail could write here, and the gateway loads this plugin outside it.
+    let own: [(&str, &str); 2] = [
+        ("plugin.yaml", PLUGIN_MANIFEST),
+        ("__init__.py", PLUGIN_SOURCE),
+    ];
+    for entry in std::fs::read_dir(&dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if let Some((_, contents)) = own
+            .iter()
+            .find(|(own, _)| name == std::ffi::OsStr::new(own))
+        {
+            // One of the app's names: something else in it counts (read
+            // only when it is a regular file, never a pipe).
+            let same = entry.file_type()?.is_file()
+                && std::fs::read(entry.path()).is_ok_and(|bytes| bytes == contents.as_bytes());
+            if !same {
+                foreign += 1;
+            }
+            continue;
+        }
+        // `file_type` does not follow a link, and neither does
+        // `remove_dir_all`.
+        if entry.file_type()?.is_dir() {
+            std::fs::remove_dir_all(entry.path())?;
+        } else {
+            std::fs::remove_file(entry.path())?;
+        }
+        foreign += 1;
+    }
+    for (name, contents) in own {
+        super::home_prep::write_owned(&dir.join(name), contents)?;
+    }
+    Ok(foreign)
 }
 
 pub fn render_ledger(
